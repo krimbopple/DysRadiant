@@ -730,17 +730,17 @@ static void Camera_motionDelta( int x, int y, const QMouseEvent *event, camera_t
 		cam.m_strafe = false;
 		break;
 	case 1:
-		cam.m_strafe = ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) || ( event->buttons() & Qt::MouseButton::RightButton );
+		cam.m_strafe = ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) != 0;
 		cam.m_strafe_forward = false;
 		break;
 	case 2:
-		cam.m_strafe = ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) || ( event->buttons() & Qt::MouseButton::RightButton );
+		cam.m_strafe = ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) != 0;
 		cam.m_strafe_forward = true;
 		break;
 	case 4:
 		cam.m_strafe_forward_invert = true; // fall through
 	default: /* 3 & 4 */
-		cam.m_strafe = ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) || ( event->buttons() & Qt::MouseButton::RightButton ) || ( event->modifiers() & Qt::KeyboardModifier::ShiftModifier );
+		cam.m_strafe = ( ( event->modifiers() & Qt::KeyboardModifier::ControlModifier ) != 0 ) || ( ( event->modifiers() & Qt::KeyboardModifier::ShiftModifier ) != 0 );
 		cam.m_strafe_forward = ( event->modifiers() & Qt::KeyboardModifier::ShiftModifier ) != 0;
 		break;
 	}
@@ -1437,8 +1437,6 @@ void CamWnd_Move_Enable( CamWnd& camwnd ){
 	KeyEvent_connect( "CameraBack" );
 	KeyEvent_connect( "CameraLeft" );
 	KeyEvent_connect( "CameraRight" );
-	KeyEvent_connect( "CameraStrafeRight" );
-	KeyEvent_connect( "CameraStrafeLeft" );
 	KeyEvent_connect( "CameraUp" );
 	KeyEvent_connect( "CameraDown" );
 	KeyEvent_connect( "CameraAngleUp" );
@@ -1450,8 +1448,6 @@ void CamWnd_Move_Disable( CamWnd& camwnd ){
 	KeyEvent_disconnect( "CameraBack" );
 	KeyEvent_disconnect( "CameraLeft" );
 	KeyEvent_disconnect( "CameraRight" );
-	KeyEvent_disconnect( "CameraStrafeRight" );
-	KeyEvent_disconnect( "CameraStrafeLeft" );
 	KeyEvent_disconnect( "CameraUp" );
 	KeyEvent_disconnect( "CameraDown" );
 	KeyEvent_disconnect( "CameraAngleUp" );
@@ -1463,8 +1459,6 @@ void CamWnd_Move_Discrete_Enable( CamWnd& camwnd ){
 	command_connect_accelerator( "CameraBack" );
 	command_connect_accelerator( "CameraLeft" );
 	command_connect_accelerator( "CameraRight" );
-	command_connect_accelerator( "CameraStrafeRight" );
-	command_connect_accelerator( "CameraStrafeLeft" );
 	command_connect_accelerator( "CameraUp" );
 	command_connect_accelerator( "CameraDown" );
 	command_connect_accelerator( "CameraAngleUp" );
@@ -1476,8 +1470,6 @@ void CamWnd_Move_Discrete_Disable( CamWnd& camwnd ){
 	command_disconnect_accelerator( "CameraBack" );
 	command_disconnect_accelerator( "CameraLeft" );
 	command_disconnect_accelerator( "CameraRight" );
-	command_disconnect_accelerator( "CameraStrafeRight" );
-	command_disconnect_accelerator( "CameraStrafeLeft" );
 	command_disconnect_accelerator( "CameraUp" );
 	command_disconnect_accelerator( "CameraDown" );
 	command_disconnect_accelerator( "CameraAngleUp" );
@@ -1516,7 +1508,12 @@ void CamWnd_Move_Discrete_Import( bool value ){
 
 
 
+void CamWnd_Add_Handlers_FreeMove( CamWnd& camwnd );
+void CamWnd_Remove_Handlers_FreeMove( CamWnd& camwnd );
+
 void CamWnd_Add_Handlers_Move( CamWnd& camwnd ){
+	CamWnd_Add_Handlers_FreeMove( camwnd );
+
 	if ( g_camwindow_globals_private.m_bCamDiscrete ) {
 		CamWnd_Move_Discrete_Enable( camwnd );
 	}
@@ -1527,6 +1524,8 @@ void CamWnd_Add_Handlers_Move( CamWnd& camwnd ){
 }
 
 void CamWnd_Remove_Handlers_Move( CamWnd& camwnd ){
+	CamWnd_Remove_Handlers_FreeMove( camwnd );
+
 	if ( g_camwindow_globals_private.m_bCamDiscrete ) {
 		CamWnd_Move_Discrete_Disable( camwnd );
 	}
@@ -1542,11 +1541,6 @@ void CamWnd_Add_Handlers_FreeMove( CamWnd& camwnd ){
 	KeyEvent_connect( "CameraFreeMoveLeft" );
 	KeyEvent_connect( "CameraFreeMoveRight" );
 
-	KeyEvent_connect( "CameraFreeMoveForward2" );
-	KeyEvent_connect( "CameraFreeMoveBack2" );
-	KeyEvent_connect( "CameraFreeMoveLeft2" );
-	KeyEvent_connect( "CameraFreeMoveRight2" );
-
 	KeyEvent_connect( "CameraFreeMoveUp" );
 	KeyEvent_connect( "CameraFreeMoveDown" );
 
@@ -1558,11 +1552,6 @@ void CamWnd_Remove_Handlers_FreeMove( CamWnd& camwnd ){
 	KeyEvent_disconnect( "CameraFreeMoveBack" );
 	KeyEvent_disconnect( "CameraFreeMoveLeft" );
 	KeyEvent_disconnect( "CameraFreeMoveRight" );
-
-	KeyEvent_disconnect( "CameraFreeMoveForward2" );
-	KeyEvent_disconnect( "CameraFreeMoveBack2" );
-	KeyEvent_disconnect( "CameraFreeMoveLeft2" );
-	KeyEvent_disconnect( "CameraFreeMoveRight2" );
 
 	KeyEvent_disconnect( "CameraFreeMoveUp" );
 	KeyEvent_disconnect( "CameraFreeMoveDown" );
