@@ -1902,7 +1902,7 @@ QWidget* TextureBrowser_constructWindow( QWidget* toplevel ){
 		g_TexBro.m_tabs->setDocumentMode( true );
 		g_TexBro.m_tabs->setTabBarAutoHide( true );
 		g_TexBro.m_tabs->addTab( g_TexBro.m_treeView, "Textures" );
-		static_cast<QObject*>( g_TexBro.m_tagsListWidget )->setParent( g_TexBro.m_tabs );
+		g_TexBro.m_tagsListWidget->setParent( g_TexBro.m_tabs );
 		TextureBrowser_tagsEnableGui( g_TexBro.m_tags );
 		vbox->addWidget( g_TexBro.m_tabs );
 
