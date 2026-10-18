@@ -29,7 +29,7 @@ bool g_bInitDone;
 const char* QERPlug_Init( void* hApp, void* pMainWidget ){
 	g_pRadiantWnd = static_cast<QWidget*>( pMainWidget );
 	ASSERT_NOTNULL( g_pRadiantWnd );
-	return "GenSurf for WifeRadiant";
+	return "GenSurf for DysRadiant";
 }
 
 const char* QERPlug_GetName(){

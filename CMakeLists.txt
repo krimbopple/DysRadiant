@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(WifeRadiant LANGUAGES C CXX VERSION 2.0.0)
+project(DysRadiant LANGUAGES C CXX VERSION 2.0.0)
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 # global options
@@ -89,7 +89,7 @@ endif()
 
 function(radiant_add_library name)
 	cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;INCLUDE_DIRECTORIES;DEPENDENCIES;COMPILE_DEFINITIONS;COMPILE_OPTIONS")
-	set(target "wiferadiant-library-${name}")
+	set(target "dysradiant-library-${name}")
 	add_library(${target} STATIC ${ARG_SOURCES})
 	radiant_add_common(${target})
 	target_link_libraries(${target}
@@ -252,7 +252,7 @@ radiant_add_library(crnlib
 	INCLUDE_DIRECTORIES
 		${PROJECT_SOURCE_DIR}/libs/crnlib
 	DEPENDENCIES
-		wiferadiant-library-ddslib
+		dysradiant-library-ddslib
 )
 
 # webplib
@@ -267,7 +267,7 @@ radiant_add_library(webplib
 # radiant
 
 if(WIN32)
-	set(RADIANT_RC_ORIGINAL_FILENAME "WifeRadiant.${RADIANT_EXECUTABLE_SUFFIX}")
+	set(RADIANT_RC_ORIGINAL_FILENAME "DysRadiant.${RADIANT_EXECUTABLE_SUFFIX}")
 	set(RADIANT_RC_ICON_FILENAME "${PROJECT_SOURCE_DIR}/resources/bitmaps/logo.ico")
 	set(RADIANT_RC_FILEVERSION "${RADIANT_VERSION_MAJOR},${RADIANT_VERSION_MINOR},${RADIANT_VERSION_PATCH},0")
 	configure_file("${PROJECT_SOURCE_DIR}/radiant/radiant.rc.in" "${PROJECT_BINARY_DIR}/radiant.rc" @ONLY)
@@ -379,10 +379,10 @@ if(APPLE)
 	add_custom_command(
 		TARGET radiant
 		POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${RADIANT_INSTALL_PREFIX}/gamepacks/" "${RADIANT_INSTALL_PREFIX}/WifeRadiant.app/Contents/Resources/gamepacks/"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${RADIANT_INSTALL_PREFIX}/gamepacks/" "${RADIANT_INSTALL_PREFIX}/DysRadiant.app/Contents/Resources/gamepacks/"
 		VERBATIM
 	)
-	set(radiant_icon_macos "${PROJECT_SOURCE_DIR}/resources/bitmaps/wiferadiant.icns")
+	set(radiant_icon_macos "${PROJECT_SOURCE_DIR}/resources/bitmaps/dysradiant.icns")
 	set_source_files_properties(${RADIANT_RESOURCES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 	set_source_files_properties(${radiant_icon_macos} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 	set_target_properties(radiant
@@ -390,8 +390,8 @@ if(APPLE)
 			MACOSX_BUNDLE TRUE
 			MACOSX_BUNDLE_BUNDLE_NAME "${PROJECT_NAME}"
 			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-			MACOSX_BUNDLE_GUI_IDENTIFIER "biz.wifesoft-gameware.wiferadiant"
-			MACOSX_BUNDLE_ICON_FILE "wiferadiant.icns"
+			MACOSX_BUNDLE_GUI_IDENTIFIER "biz.wifesoft-gameware.dysradiant"
+			MACOSX_BUNDLE_ICON_FILE "dysradiant.icns"
 	)
 	qt_generate_deploy_app_script(
 		TARGET radiant
@@ -414,14 +414,14 @@ target_include_directories(radiant
 if(EMSCRIPTEN)
 	set_target_properties(radiant
 		PROPERTIES
-			OUTPUT_NAME WifeRadiant
+			OUTPUT_NAME DysRadiant
 			LIBRARY_OUTPUT_DIRECTORY ${RADIANT_INSTALL_PREFIX}
 			RUNTIME_OUTPUT_DIRECTORY ${RADIANT_INSTALL_PREFIX}
 	)
 else()
 	set_target_properties(radiant
 		PROPERTIES
-			OUTPUT_NAME WifeRadiant
+			OUTPUT_NAME DysRadiant
 			LIBRARY_OUTPUT_DIRECTORY $<1:${RADIANT_INSTALL_PREFIX}>
 			RUNTIME_OUTPUT_DIRECTORY $<1:${RADIANT_INSTALL_PREFIX}>
 	)
@@ -436,11 +436,11 @@ target_link_libraries(radiant
 		Qt6::OpenGL
 		Qt6::OpenGLWidgets
 		LibXml2::LibXml2
-		wiferadiant-library-commandlib
-		wiferadiant-library-gtkutil
-		wiferadiant-library-l_net
-		wiferadiant-library-xmllib
-		wiferadiant-library-quickhull
+		dysradiant-library-commandlib
+		dysradiant-library-gtkutil
+		dysradiant-library-l_net
+		dysradiant-library-xmllib
+		dysradiant-library-quickhull
 		sourcepp::toolpp
 		sourcepp::steampp
 		$<$<BOOL:${WIN32}>:ws2_32>

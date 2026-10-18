@@ -444,7 +444,7 @@ void DoSides( EBrushPrefab type ){
 
 void DoAbout(){
 	QDialog dialog( MainFrame_getWindow(), Qt::Dialog | Qt::WindowCloseButtonHint );
-	dialog.setWindowTitle( "About WifeRadiant" );
+	dialog.setWindowTitle( "About DysRadiant" );
 
 	{
 		auto *vbox = new QVBoxLayout( &dialog );
@@ -461,7 +461,7 @@ void DoAbout(){
 			}
 
 			{
-				auto *label = new QLabel( "WifeRadiant " RADIANT_GIT_REVISION "\n"
+				auto *label = new QLabel( "DysRadiant " RADIANT_GIT_REVISION "\n"
 				                         __DATE__ "\n\n"
 				                         RADIANT_ABOUTMSG "\n\n"
 				                         "This program is free software\n"

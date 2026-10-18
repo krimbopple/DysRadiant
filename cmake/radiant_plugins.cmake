@@ -2,7 +2,7 @@
 
 function(radiant_add_plugin name)
 	cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;INCLUDE_DIRECTORIES;DEPENDENCIES;COMPILE_DEFINITIONS;COMPILE_OPTIONS")
-	set(target "wiferadiant-plugin-${name}")
+	set(target "dysradiant-plugin-${name}")
 	if(EMSCRIPTEN)
 		add_executable(${target} ${ARG_SOURCES})
 	else()
@@ -149,8 +149,8 @@ radiant_add_plugin(bobtoolz
 		${PROJECT_SOURCE_DIR}/plugins/bobtoolz/shapes.cpp
 		${PROJECT_SOURCE_DIR}/plugins/bobtoolz/visfind.cpp
 	DEPENDENCIES
-		wiferadiant-library-commandlib
-		wiferadiant-library-mathlib
+		dysradiant-library-commandlib
+		dysradiant-library-mathlib
 		Qt6::Core
 		Qt6::Gui
 		Qt6::Widgets
@@ -163,7 +163,7 @@ radiant_add_plugin(shaderplug
 	SOURCES
 		${PROJECT_SOURCE_DIR}/plugins/shaderplug/shaderplug.cpp
 	DEPENDENCIES
-		wiferadiant-library-xmllib
+		dysradiant-library-xmllib
 		LibXml2::LibXml2
 )
 

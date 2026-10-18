@@ -664,7 +664,7 @@ void Restart(){
 
 
 void OpenUpdateURL(){
-	OpenURL( "https://wiferadiant.org/" );
+	OpenURL( "https://krimbopple.xyz/" );
 #if 0
 	// build the URL
 	StringOutputStream URL( 256 );
@@ -689,7 +689,7 @@ void OpenHelpURL(){
 }
 
 void OpenBugReportURL(){
-	OpenURL( "https://github.com/erysdren/WifeRadiant/issues" );
+	OpenURL( "https://github.com/krimbopple/DysRadiant/issues" );
 	// OpenURL( "http://www.icculus.org/netradiant/?cmd=bugs" );
 	// OpenURL( "https://github.com/Garux/netradiant-custom/issues" );
 }

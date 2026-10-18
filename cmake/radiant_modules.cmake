@@ -2,7 +2,7 @@
 
 function(radiant_add_module name)
 	cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;INCLUDE_DIRECTORIES;DEPENDENCIES;COMPILE_DEFINITIONS;COMPILE_OPTIONS")
-	set(target "wiferadiant-module-${name}")
+	set(target "dysradiant-module-${name}")
 	if(EMSCRIPTEN)
 		add_executable(${target} ${ARG_SOURCES})
 	else()
@@ -101,11 +101,11 @@ radiant_add_module(image
 		${PROJECT_SOURCE_DIR}/modules/image/vtf.cpp
 		${PROJECT_SOURCE_DIR}/modules/image/webp.cpp
 	DEPENDENCIES
-		wiferadiant-library-ddslib
-		wiferadiant-library-etclib
-		wiferadiant-library-crnlib
-		wiferadiant-library-webplib
-		wiferadiant-library-stb
+		dysradiant-library-ddslib
+		dysradiant-library-etclib
+		dysradiant-library-crnlib
+		dysradiant-library-webplib
+		dysradiant-library-stb
 		sourcepp::vtfpp
 )
 
@@ -194,7 +194,7 @@ radiant_add_module(shaders
 		${PROJECT_SOURCE_DIR}/modules/shaders/plugin.cpp
 		${PROJECT_SOURCE_DIR}/modules/shaders/shaders.cpp
 	DEPENDENCIES
-		wiferadiant-library-commandlib
+		dysradiant-library-commandlib
 		LibXml2::LibXml2
 		sourcepp::kvpp
 )
@@ -206,5 +206,5 @@ radiant_add_module(vfspk3
 		${PROJECT_SOURCE_DIR}/modules/vfspk3/vfspk3.cpp
 	DEPENDENCIES
 		LibXml2::LibXml2
-		wiferadiant-library-filematch
+		dysradiant-library-filematch
 )

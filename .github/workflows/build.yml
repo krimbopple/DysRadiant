@@ -50,12 +50,12 @@ jobs:
 
     - name: Deploy
       run: |
-        windeployqt install/radiant.${{ matrix.arch }}.exe
+        windeployqt install/DysRadiant.${{ matrix.arch }}.exe
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: WifeRadiant-${{ github.sha }}-Windows-${{ matrix.arch }}-${{ matrix.type }}
+        name: DysRadiant-${{ github.sha }}-Windows-${{ matrix.arch }}-${{ matrix.type }}
         path: install/*
         if-no-files-found: error
 
@@ -97,7 +97,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: WifeRadiant-${{ github.sha }}-Linux-${{ matrix.arch }}-${{ matrix.type }}
+        name: DysRadiant-${{ github.sha }}-Linux-${{ matrix.arch }}-${{ matrix.type }}
         path: install/*
         if-no-files-found: error
 
@@ -130,11 +130,11 @@ jobs:
     - name: Deploy
       run: |
         cd install
-        macdeployqt WifeRadiant.app
+        macdeployqt DysRadiant.app
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: WifeRadiant-${{ github.sha }}-MacOS-${{ matrix.arch }}-${{ matrix.type }}
+        name: DysRadiant-${{ github.sha }}-MacOS-${{ matrix.arch }}-${{ matrix.type }}
         path: install/*
         if-no-files-found: error

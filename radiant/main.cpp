@@ -19,7 +19,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-/*! \mainpage WifeRadiant Documentation Index
+/*! \mainpage DysRadiant Documentation Index
 
    \section intro_sec Introduction
 
@@ -415,8 +415,8 @@ int main( int argc, char* argv[] ){
 	QApplication qapplication( argc, argv );
 	setlocale( LC_NUMERIC, "C" );
 	qInstallMessageHandler( qute_messageHandler );
-	QCoreApplication::setOrganizationName( "WifeRadiant" );
-	QCoreApplication::setApplicationName( "WifeRadiant" );
+	QCoreApplication::setOrganizationName( "DysRadiant" );
+	QCoreApplication::setApplicationName( "DysRadiant" );
 	QCoreApplication::setApplicationVersion( QT_VERSION_STR );
 
 	GlobalDebugMessageHandler::instance().setHandler( GlobalPopupDebugMessageHandler::instance() );

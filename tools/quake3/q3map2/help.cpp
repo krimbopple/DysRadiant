@@ -452,7 +452,7 @@ static void HelpMergeBsp()
 static void HelpCommon()
 {
 	const std::vector<HelpOption> options = {
-		{ "-connect <address>", "Talk to a WifeRadiant instance using a specific XML based protocol" },
+		{ "-connect <address>", "Talk to a DysRadiant instance using a specific XML based protocol" },
 		{ "-force", "Allow reading some broken/unsupported BSP files e.g. when decompiling, may crash" },
 		{ "-fs_basepath <path>", "Sets the given path as main directory of the game (can be used more than once to look in multiple paths)" },
 		{ "-fs_forbiddenpath <pattern>", "Pattern to ignore directories, pk3, and pk3dir; example pak?.pk3 (can be used more than once to look for multiple patterns)" },

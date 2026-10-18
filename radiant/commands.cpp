@@ -464,6 +464,9 @@ public:
 			if ( string_empty( *value ) ) {
 				accelerator = {};
 			}
+			else if ( const char *keys = *value; keys[0] == ',' || strstr( keys, ",," ) != nullptr ) {
+				globalWarningStream() << "WARNING: failed to parse user command " << Quoted( name ) << ": malformed key " << Quoted( *value ) << '\n';
+			}
 			else{
 				accelerator = QKeySequence( *value );
 				if ( QKeySequence_valid( accelerator ) ) {

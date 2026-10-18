@@ -144,7 +144,7 @@ int main( int argc, char **argv ){
 	Sys_Printf( "Q3Map         - v1.0r (c) 1999 Id Software Inc.\n" );
 	Sys_Printf( "Q3Map (ydnar) - v" Q3MAP_VERSION "\n" );
 	Sys_Printf( "WRMap         - v" WRMAP_VERSION "\n" );
-	Sys_Printf( "WifeRadiant   - " RADIANT_GIT_REVISION " " RADIANT_GIT_DATE "\n" );
+	Sys_Printf( "DysRadiant   - " RADIANT_GIT_REVISION " " RADIANT_GIT_DATE "\n" );
 	Sys_Printf( "%s\n", WRMAP_MOTD );
 	Sys_Printf( "%s\n", args.getArg0() );
 

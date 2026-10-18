@@ -34,7 +34,7 @@ BEGIN
             VALUE "InternalName",     "wrmap\0"
             VALUE "LegalCopyright",   "Copyright (C) 2025-2026 erysdren (it/its)\0"
             VALUE "License",          "GPL2\0"
-            VALUE "Info",             "https://wiferadiant.org/\0"
+            VALUE "Info",             "https://krimbopple.xyz/\0"
             VALUE "OriginalFilename", "@WRMAP_RC_ORIGINAL_FILENAME@\0"
             VALUE "ProductName",      "wrmap\0"
             VALUE "ProductVersion",   "@WRMAP_VERSION@\0"

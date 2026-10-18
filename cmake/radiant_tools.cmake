@@ -4,7 +4,7 @@ endif()
 
 function(radiant_add_tool name)
 	cmake_parse_arguments(PARSE_ARGV 1 ARG "WIN32" "" "SOURCES;INCLUDE_DIRECTORIES;DEPENDENCIES;COMPILE_DEFINITIONS;COMPILE_OPTIONS")
-	set(target "wiferadiant-tool-${name}")
+	set(target "dysradiant-tool-${name}")
 	if(ARG_WIN32)
 		add_executable(${target} WIN32 ${ARG_SOURCES})
 	else()
