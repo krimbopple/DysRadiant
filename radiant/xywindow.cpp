@@ -61,6 +61,7 @@
 #include "selection.h"
 #include "entity.h"
 #include "camwindow.h"
+#include "entityinspector.h"
 #include "mainframe.h"
 #include "preferences.h"
 #include "commands.h"
@@ -516,6 +517,11 @@ protected:
 		m_xywnd.ButtonState_onMouseUp( buttons_for_event_button( event ) );
 
 		m_xywnd.chaseMouseMotion( event->position().x() * m_scale, event->position().y() * m_scale ); /* stop chaseMouseMotion this way */
+	}
+	void mouseDoubleClickEvent( QMouseEvent *event ) override {
+		if( event->button() == Qt::MouseButton::LeftButton && GlobalSelectionSystem().countSelected() != 0 ){
+			ObjectProperties_Show();
+		}
 	}
 	void wheelEvent( QWheelEvent *event ) override {
 		setFocus();

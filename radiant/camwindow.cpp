@@ -49,6 +49,7 @@
 #include "gtkutil/fbo.h"
 #include "gtkmisc.h"
 #include "selection.h"
+#include "entityinspector.h"
 #include "mainframe.h"
 #include "preferences.h"
 #include "commands.h"
@@ -1046,6 +1047,15 @@ void GlobalCamera_setCamWnd( CamWnd& camwnd ){
 	g_camwnd = &camwnd;
 }
 
+void CamWnd_ToggleMouselook(){
+	if ( g_camwnd == 0 )
+		return;
+	if ( g_camwnd->m_bFreeMove )
+		g_camwnd->DisableFreeMove();
+	else
+		g_camwnd->EnableFreeMove();
+}
+
 
 QWidget* CamWnd_getWidget( CamWnd& camwnd ){
 	return camwnd.m_gl_widget;
@@ -1629,6 +1639,11 @@ protected:
 		}
 		else{
 			;
+		}
+	}
+	void mouseDoubleClickEvent( QMouseEvent *event ) override {
+		if( !m_camwnd.m_bFreeMove && event->button() == Qt::MouseButton::LeftButton && GlobalSelectionSystem().countSelected() != 0 ){
+			ObjectProperties_Show();
 		}
 	}
 	void mouseReleaseEvent( QMouseEvent *event ) override {

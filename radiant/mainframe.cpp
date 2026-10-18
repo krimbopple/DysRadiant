@@ -942,6 +942,8 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 	}
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
+	create_menu_item_with_mnemonic( menu, "Object Properties", "ObjectProperties" );
+	create_menu_item_with_mnemonic( menu, "Toggle Mouselook", "CameraToggleMouselook" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
 	create_menu_item_with_mnemonic( menu, "&Surface Inspector", "SurfaceInspector" );
 	create_menu_item_with_mnemonic( menu, "Entity List", "ToggleEntityList" );
@@ -2067,6 +2069,8 @@ void MainFrame_Construct(){
 
 	GlobalCommands_insert( "ToggleConsole", makeCallbackF( Console_ToggleShow ), QKeySequence( "O" ) );
 	GlobalCommands_insert( "ToggleEntityInspector", makeCallbackF( EntityInspector_ToggleShow ), QKeySequence( "N" ) );
+	GlobalCommands_insert( "ObjectProperties", makeCallbackF( ObjectProperties_Show ), QKeySequence( "Alt+Return" ) );
+	GlobalCommands_insert( "CameraToggleMouselook", makeCallbackF( CamWnd_ToggleMouselook ), QKeySequence( "Z" ) );
 	GlobalCommands_insert( "ToggleModelBrowser", makeCallbackF( ModelBrowser_ToggleShow ), QKeySequence( "/" ) );
 	GlobalCommands_insert( "ToggleLayersBrowser", makeCallbackF( LayersBrowser_ToggleShow ), QKeySequence( "L" ) );
 	GlobalCommands_insert( "ToggleEntityList", makeCallbackF( EntityList_toggleShown ), QKeySequence( "Shift+L" ) );

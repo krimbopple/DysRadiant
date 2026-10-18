@@ -50,7 +50,13 @@
 #include <QKeyEvent>
 #include <QButtonGroup>
 #include <QToolTip>
+#include <QDialog>
+#include <QTableWidget>
+#include <QInputDialog>
+#include <QComboBox>
+#include <QTimer>
 #include "gtkutil/combobox.h"
+#include "gtkutil/messagebox.h"
 
 #include "os/path.h"
 #include "eclasslib.h"
@@ -69,6 +75,7 @@
 #include "gtkutil/image.h"
 
 #include "qe3.h"
+#include "map.h"
 #include "gtkmisc.h"
 #include "entity.h"
 #include "mainframe.h"
@@ -1219,6 +1226,209 @@ public:
 EntityInspectorDraw g_EntityInspectorDraw;
 
 
+// Object properties
+// TODO: reuse the entity attributes here for smartedit
+
+static QDialog* g_objectProperties = nullptr;
+static QTableWidget* g_objectPropertiesTable = nullptr;
+
+static void ObjectProperties_refresh();
+
+static void ObjectProperties_applyClass( const QString& text ){
+	const QByteArray name = text.toLatin1();
+	EntityClass* eclass = GlobalEntityClassManager().findOrInsert( name.constData(), true );
+	const auto current = g_selectedKeyValues.find( "classname" );
+	const bool fromWorld = current != g_selectedKeyValues.end() && string_equal_nocase( current->second.c_str(), "worldspawn" );
+	if ( fromWorld && eclass->fixedsize ) {
+		qt_MessageBox( g_objectProperties, "A brush cannot become a point entity.\nPlace it with the entity creation menu instead.", "Object Properties", EMessageBoxType::Warning );
+		return;
+	}
+
+	// FIXME: WORKAROUND!! class change throws the selection away
+	class CollectPrimitiveNodes : public SelectionSystem::Visitor
+	{
+	public:
+		mutable std::vector<scene::Node*> m_nodes;
+		void visit( scene::Instance& instance ) const override {
+			if ( Node_isPrimitive( instance.path().top() ) ) {
+				m_nodes.push_back( &instance.path().top().get() );
+			}
+		}
+	} primitives;
+	GlobalSelectionSystem().foreachSelected( primitives );
+
+	Scene_EntitySetClassname_Selected( name.constData() );
+
+	QTimer::singleShot( 0, [nodes = std::move( primitives.m_nodes )](){
+		class SelectNodes : public scene::Graph::Walker
+		{
+			const std::vector<scene::Node*>& m_nodes;
+		public:
+			SelectNodes( const std::vector<scene::Node*>& nodes ) : m_nodes( nodes ) {
+			}
+			bool pre( const scene::Path& path, scene::Instance& instance ) const override {
+				return true;
+			}
+			void post( const scene::Path& path, scene::Instance& instance ) const override {
+				for ( scene::Node* node : m_nodes ) {
+					if ( node == path.top().get_pointer() ) {
+						Instance_setSelected( instance, true );
+						break;
+					}
+				}
+			}
+		} select( nodes );
+		GlobalSceneGraph().traverse( select );
+
+		ObjectProperties_refresh();
+	} );
+}
+
+static void ObjectProperties_fillClassCombo( QComboBox& combo ){
+	enum { eAnyClass = -1, ePointClass = 0, eSolidClass = 1, eWorldClass = 2 };
+
+	int solidClasses = eAnyClass;
+	const auto current = g_selectedKeyValues.find( "classname" );
+	if ( current != g_selectedKeyValues.end() && !string_empty( current->second.c_str() ) ) {
+		if ( string_equal_nocase( current->second.c_str(), "worldspawn" ) ) {
+			solidClasses = Scene_countSelectedBrushes( GlobalSceneGraph() ) != 0 ? eSolidClass : eWorldClass;
+		}
+		else
+		{
+			EntityClass* eclass = GlobalEntityClassManager().findOrInsert( current->second.c_str(), true );
+			solidClasses = eclass->fixedsize ? ePointClass : eSolidClass;
+		}
+	}
+
+	if ( solidClasses == eWorldClass ) {
+		combo.addItem( "worldspawn" );
+		return;
+	}
+
+	class Filler : public EntityClassVisitor
+	{
+		QComboBox& m_combo;
+		const int m_solidClasses;
+	public:
+		Filler( QComboBox& combo, int solidClasses ) : m_combo( combo ), m_solidClasses( solidClasses ) {
+		}
+		void visit( EntityClass* eclass ) override {
+			const char* name = eclass->name();
+			if ( string_empty( name ) || string_equal_nocase( name, "worldspawn" ) ) {
+				return;
+			}
+			if ( m_solidClasses != eAnyClass && eclass->fixedsize != ( m_solidClasses == ePointClass ) ) {
+				return;
+			}
+			m_combo.addItem( name );
+		}
+	} filler( combo, solidClasses );
+	GlobalEntityClassManager().forEach( filler );
+
+	// the class may be missing from the fgd so we'll keep it listed anyway
+	if ( current != g_selectedKeyValues.end() && !string_empty( current->second.c_str() ) && combo.findText( current->second.c_str() ) < 0 ) {
+		combo.addItem( current->second.c_str() );
+	}
+}
+
+static void ObjectProperties_refresh(){
+	if ( g_objectPropertiesTable == nullptr ) {
+		return;
+	}
+	EntityInspector_updateKeyValues();
+	g_objectPropertiesTable->blockSignals( true );
+	g_objectPropertiesTable->setRowCount( 0 );
+	for ( const auto& [key, value] : g_selectedKeyValues ) {
+		const int row = g_objectPropertiesTable->rowCount();
+		g_objectPropertiesTable->insertRow( row );
+		auto *keyItem = new QTableWidgetItem( key.c_str() );
+		keyItem->setFlags( keyItem->flags() & ~Qt::ItemIsEditable );
+		g_objectPropertiesTable->setItem( row, 0, keyItem );
+		if ( string_equal_nocase( key.c_str(), "classname" ) ) {
+			auto *combo = new QComboBox( g_objectPropertiesTable );
+			ObjectProperties_fillClassCombo( *combo );
+			combo->setCurrentText( value.c_str() );
+			QObject::connect( combo, &QComboBox::textActivated, []( const QString& name ){
+				QTimer::singleShot( 0, [name](){ ObjectProperties_applyClass( name ); } );
+			} );
+			g_objectPropertiesTable->setCellWidget( row, 1, combo );
+		}
+		else {
+			g_objectPropertiesTable->setItem( row, 1, new QTableWidgetItem( value.c_str() ) );
+		}
+	}
+	g_objectPropertiesTable->blockSignals( false );
+}
+
+static void ObjectProperties_create(){
+	auto *dialog = new QDialog( MainFrame_getWindow(), Qt::Dialog | Qt::WindowCloseButtonHint );
+	dialog->setWindowTitle( "Object Properties" );
+	dialog->resize( 420, 480 );
+	auto *vbox = new QVBoxLayout( dialog );
+	auto *table = new QTableWidget( 0, 2, dialog );
+	table->setHorizontalHeaderLabels( { "Key", "Value" } );
+	table->horizontalHeader()->setStretchLastSection( true );
+	table->verticalHeader()->hide();
+	table->setSelectionBehavior( QAbstractItemView::SelectionBehavior::SelectRows );
+	vbox->addWidget( table );
+
+	auto *buttons = new QHBoxLayout;
+	auto *addButton = new QPushButton( "Add Key" );
+	auto *removeButton = new QPushButton( "Remove Key" );
+	buttons->addWidget( addButton );
+	buttons->addWidget( removeButton );
+	buttons->addStretch( 1 );
+	vbox->addLayout( buttons );
+
+	auto *closeButton = new QPushButton( "Close" );
+	vbox->addWidget( closeButton );
+
+	QObject::connect( closeButton, &QPushButton::clicked, dialog, &QDialog::hide );
+	QObject::connect( table, &QTableWidget::itemChanged, []( QTableWidgetItem* item ){
+		if ( item == nullptr || item->column() != 1 ) {
+			return;
+		}
+		const QTableWidgetItem* keyItem = g_objectPropertiesTable->item( item->row(), 0 );
+		if ( keyItem != nullptr ) {
+			Scene_EntitySetKeyValue_Selected_Undoable( keyItem->text().toLatin1().constData(), item->text().toLatin1().constData() );
+		}
+	} );
+	QObject::connect( addButton, &QPushButton::clicked, [dialog](){
+		bool ok = false;
+		const QString key = QInputDialog::getText( dialog, "Add Key", "Key name:", QLineEdit::Normal, {}, &ok );
+		if ( ok && !key.isEmpty() ) {
+			Scene_EntitySetKeyValue_Selected_Undoable( key.toLatin1().constData(), "" );
+			ObjectProperties_refresh();
+		}
+	} );
+	QObject::connect( removeButton, &QPushButton::clicked, [table](){
+		const auto rows = table->selectionModel()->selectedRows();
+		for ( const auto& index : rows ) {
+			if ( const QTableWidgetItem* keyItem = table->item( index.row(), 0 ) ) {
+				Scene_EntitySetKeyValue_Selected( keyItem->text().toLatin1().constData(), "" );
+			}
+		}
+		ObjectProperties_refresh();
+	} );
+	QObject::connect( dialog, &QObject::destroyed, [](){
+		g_objectProperties = nullptr;
+		g_objectPropertiesTable = nullptr;
+	} );
+
+	g_objectProperties = dialog;
+	g_objectPropertiesTable = table;
+}
+
+void ObjectProperties_Show(){
+	if ( g_objectProperties == nullptr ) {
+		ObjectProperties_create();
+	}
+	ObjectProperties_refresh();
+	g_objectProperties->show();
+	g_objectProperties->raise();
+	g_objectProperties->activateWindow();
+}
+
 void EntityInspector_outputChanged(){
 	g_EntityInspectorDraw.queueDraw();
 }
@@ -1227,6 +1437,9 @@ void EntityInspector_keyValueChanged(){
 }
 void EntityInspector_selectionChanged( const Selectable& ){
 	EntityInspector_keyValueChanged();
+	if ( g_objectProperties != nullptr && g_objectProperties->isVisible() ) {
+		QTimer::singleShot( 0, [](){ ObjectProperties_refresh(); } );
+	}
 }
 
 void EntityInspector_applyKeyValue(){

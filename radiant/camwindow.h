@@ -49,6 +49,7 @@ const Vector3& Camera_getOrigin( CamWnd& camwnd );
 void Camera_setOrigin( CamWnd& camwnd, const Vector3& origin );
 
 void GlobalCamera_FocusOnSelected();
+void CamWnd_ToggleMouselook();
 
 enum
 {

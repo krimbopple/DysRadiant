@@ -33,7 +33,7 @@
               ctrl + m1             select brush face
               ctrl + m1 drag        paint faces selection
                      m2             enter/quit 3d mouselook mode
-                     m2 drag        sideways + up/down strafes
+                     m2 drag        look around
                alt + m2             orbit around clicked point
                      m2 x2          entities creation menu
                      m3             copy texture name, alignment, color, light power, color
