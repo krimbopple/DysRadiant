@@ -125,6 +125,46 @@ radiant_add_gamepack(dods
 	MODELSCALE_KEY "uniformscale"
 )
 
+# Dystopia
+radiant_add_gamepack(dystopia
+	SUPPORT_LIGHTMAP_SCALE
+	SUPPORT_OUTPUTS
+	WRITE_DEFAULT_KEYVALUES
+	READ_GAMEINFO_TXT
+	GAME_TYPE "source"
+	TITLE "Dystopia"
+	GAMEDIR "dystopia"
+	PATH_WIN32 "C:/Program Files (x86)/Steam/steamapps/common/Dystopia/"
+	PATH_LINUX "~/.steam/steam/steamapps/common/Dystopia/"
+	EXECUTABLE_WIN32 "dystopia.exe"
+	EXECUTABLE_LINUX "dystopia.sh"
+	EXECUTABLE_MACOS "dystopia.sh"
+	ENTITIES_FILENAME "dystopia.fgd"
+	SHADER_TYPE "source"
+	SHADER_PATH "materials"
+	TEXTURE_PATH "materials"
+	ENTITY_CLASS "quake3"
+	ENTITY_CLASS_TYPES "fgd"
+	ENTITIES "source"
+	DEFAULT_SCALE "0.25"
+	DEFAULT_LIGHTMAP_SCALE "16"
+	MAP_EXTENSION ".vmf"
+	MAP_BACKUP_EXTENSION ".vmx"
+	BUILD_MENU_FILENAME "default_build_menu_source.xml"
+	ARCHIVE_TYPES "vpk" "gma" "gcf"
+	TEXTURE_TYPES "vtf" "tth"
+	MODEL_TYPES "mdl"
+	SOUND_TYPES "wav" "mp3"
+	MAP_TYPES "mapvmf"
+	BRUSH_TYPES "source"
+	PATCH_TYPES "quake3"
+	SHADER_CAULK "materials/tools/toolsnodraw"
+	SHADER_NODRAW "materials/tools/toolsnodraw"
+	SHADER_TRIGGER "materials/tools/toolstrigger"
+	MODELSCALE_VEC_KEY "scale"
+	MODELSCALE_KEY "uniformscale"
+)
+
 # Garry's Mod
 radiant_add_gamepack(garrysmod
 	SUPPORT_LIGHTMAP_SCALE
