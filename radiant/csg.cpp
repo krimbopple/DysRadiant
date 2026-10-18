@@ -605,25 +605,33 @@ public:
 				: std::fabs( n1[ p1 ] ) > std::fabs( n2[ p2 ] ); // or most axial
 			} );
 
-			auto it = faces.cbegin(), found = it; // traverse projections and craft more fortunate splits order in non trivial cases
-			while( ( found = std::ranges::find_if( faces, [&doneProjections]( const Face* face ){
-				return std::ranges::find( doneProjections, projectionaxis_for_normal( face->getPlane().plane3().normal() ) ) == doneProjections.cend();
-			} ) ) != faces.cend() ){
-				auto moveit = [&]( decltype( it ) move ){ // moves face forward to prioritize
-					const Face* face = *move;
-					faces.erase( move );
-					faces.insert( it++, face ); // postincrement: 'it' ends up right after the insertion
+			// traverse projections and craft more fortunate splits order in non trivial cases
+			// erase()/insert() invalidate iterators! so tracking positions by index is the only real way here
+			std::size_t it = 0;
+			auto find_unprocessed = [&faces, &doneProjections]() -> std::size_t {
+				for ( std::size_t i = 0; i < faces.size(); ++i )
+					if( std::ranges::find( doneProjections, projectionaxis_for_normal( faces[i]->getPlane().plane3().normal() ) ) == doneProjections.cend() )
+						return i;
+				return faces.size();
+			};
+			for ( std::size_t found = find_unprocessed(); found < faces.size(); found = find_unprocessed() )
+			{
+				auto moveit = [&]( std::size_t move ){ // moves face forward to prioritize
+					const Face* face = faces[move];
+					faces.erase( faces.cbegin() + move );
+					faces.insert( faces.cbegin() + it, face ); // 'it' ends up right after the insertion
+					++it;
 				};
 				moveit( found );
-				const DoubleVector3& n1 = ( *( it - 1 ) )->getPlane().plane3().normal();
+				const DoubleVector3& n1 = faces[it - 1]->getPlane().plane3().normal();
 				const ProjectionAxis p1 = projectionaxis_for_normal( n1 );
 				doneProjections.push_back( p1 );
 				// find opposite face
-				auto more = faces.cend();
+				std::size_t more = faces.size();
 				double bestmax = 0;
 				double bestdot = 1;
-				for( auto face = it; face != faces.cend(); ++face ){
-					const DoubleVector3& n2 = ( *face )->getPlane().plane3().normal();
+				for( std::size_t i = it; i < faces.size(); ++i ){
+					const DoubleVector3& n2 = faces[i]->getPlane().plane3().normal();
 					const ProjectionAxis p2 = projectionaxis_for_normal( n2 );
 					if( p1 == p2 // same projection
 					&& n1[p1] * n2[p2] < 0 // opposite projection facing
@@ -632,10 +640,10 @@ public:
 					     && vector3_dot( n1, n2 ) < bestdot ) ) ){ // + more opposing normal direction
 						bestmax = std::fabs( n2[p2] );
 						bestdot = vector3_dot( n1, n2 );
-						more = face;
+						more = i;
 					}
 				}
-				if( more != faces.end() ){
+				if( more < faces.size() ){
 					moveit( more );
 				}
 			}
