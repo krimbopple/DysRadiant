@@ -150,7 +150,7 @@ radiant_add_gamepack(dystopia
 	DEFAULT_LIGHTMAP_SCALE "16"
 	MAP_EXTENSION ".vmf"
 	MAP_BACKUP_EXTENSION ".vmx"
-	BUILD_MENU_FILENAME "default_build_menu_source.xml"
+	BUILD_MENU_FILENAME "default_build_menu_dystopia.xml"
 	ARCHIVE_TYPES "vpk" "gma" "gcf"
 	TEXTURE_TYPES "vtf" "tth"
 	MODEL_TYPES "mdl"
