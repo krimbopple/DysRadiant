@@ -1881,7 +1881,7 @@ void Shaders_Load(){
 		}
 		else
 		{
-			GlobalFileSystem().forEachFile( path, g_shadersExtension, makeCallbackF( ShaderList_addShaderFile ), 0 );
+			GlobalFileSystem().forEachFile( path, g_shadersExtension, makeCallbackF( ShaderList_addShaderFile ), 99 ); // probably safe..?
 		}
 
 		StringOutputStream shadername( 256 );

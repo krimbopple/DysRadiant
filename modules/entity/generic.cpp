@@ -56,6 +56,61 @@ inline void read_aabb( AABB& aabb, const EntityClass& eclass ){
 }
 
 
+// draws the iconsprite() of the class
+class RenderableIcon : public OpenGLRenderable
+{
+public:
+	mutable bool m_selected = false;
+
+	void render( RenderStateFlags state ) const override {
+		const float size = 16.f;
+
+		GLfloat modelview[16];
+		gl().glGetFloatv( GL_MODELVIEW_MATRIX, modelview );
+		const float sx = std::sqrt( modelview[0] * modelview[0] + modelview[1] * modelview[1] + modelview[2] * modelview[2] );
+		const float sy = std::sqrt( modelview[4] * modelview[4] + modelview[5] * modelview[5] + modelview[6] * modelview[6] );
+		const float sz = std::sqrt( modelview[8] * modelview[8] + modelview[9] * modelview[9] + modelview[10] * modelview[10] );
+		gl().glPushMatrix();
+		modelview[0] = sx; modelview[1] = 0; modelview[2] = 0;
+		modelview[4] = 0; modelview[5] = sy; modelview[6] = 0;
+		modelview[8] = 0; modelview[9] = 0; modelview[10] = sz;
+		gl().glLoadMatrixf( modelview );
+
+		gl().glPushAttrib( GL_ALL_ATTRIB_BITS );
+		gl().glDisable( GL_CULL_FACE );
+		gl().glDisable( GL_LIGHTING );
+		gl().glEnable( GL_TEXTURE_2D );
+		gl().glEnable( GL_ALPHA_TEST );
+		gl().glAlphaFunc( GL_GREATER, 0.5f );
+		gl().glEnable( GL_BLEND );
+		gl().glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+		gl().glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		gl().glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		gl().glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		if ( m_selected ) {
+			gl().glColor3f( 1.0f, 0.63f, 0.0f );
+		}
+		else {
+			gl().glColor3f( 1.0f, 1.0f, 1.0f );
+		}
+
+		gl().glBegin( GL_QUADS );
+		gl().glTexCoord2f( 0, 0 );
+		gl().glVertex3f( -size, size, 0 );
+		gl().glTexCoord2f( 1, 0 );
+		gl().glVertex3f( size, size, 0 );
+		gl().glTexCoord2f( 1, 1 );
+		gl().glVertex3f( size, -size, 0 );
+		gl().glTexCoord2f( 0, 1 );
+		gl().glVertex3f( -size, -size, 0 );
+		gl().glEnd();
+
+		gl().glPopAttrib();
+
+		gl().glPopMatrix();
+	}
+};
+
 class GenericEntity :
 	public Cullable,
 	public Bounded,
@@ -79,6 +134,7 @@ class GenericEntity :
 	RenderableArrow m_arrow;
 	RenderableSolidAABB m_aabb_solid;
 	RenderableWireframeAABB m_aabb_wire;
+	RenderableIcon m_icon;
 	RenderableNamedEntity m_renderName;
 
 	Callback<void()> m_transformChanged;
@@ -201,17 +257,38 @@ public:
 			renderer.addRenderable( m_arrow, localToWorld );
 		}
 	}
+	void renderIcon( Renderer& renderer, const Matrix4& localToWorld, Renderer::EStyle style, bool selected ) const {
+		Shader* icon = m_entity.getEntityClass().m_state_icon;
+		if ( icon != nullptr ) {
+			m_icon.m_selected = selected;
+			// we draw the icon outside of the highlight pass so selecting it will tint the image instead of just overlaying a REALLY FUCKING BRIGHT quad
+			renderer.PushState();
+			renderer.Highlight( Renderer::ePrimitive, false );
+			renderer.Highlight( Renderer::eFace, false );
+			renderer.SetState( icon, style );
+			renderer.addRenderable( m_icon, localToWorld );
+			renderer.PopState();
+		}
+	}
 	void renderSolid( Renderer& renderer, const VolumeTest& volume, const Matrix4& localToWorld, bool selected ) const {
+		const bool hasIcon = m_entity.getEntityClass().m_state_icon != nullptr;
 		renderer.SetState( m_entity.getEntityClass().m_state_fill, Renderer::eFullMaterials );
-		renderer.addRenderable( m_aabb_solid, localToWorld );
+		if ( !hasIcon ) {
+			renderer.addRenderable( m_aabb_solid, localToWorld );
+		}
+		renderIcon( renderer, localToWorld, Renderer::eFullMaterials, selected );
 		renderArrow( renderer, volume, localToWorld );
 		if ( g_showNames || selected ) {
 			m_renderName.render( renderer, volume, localToWorld, selected );
 		}
 	}
 	void renderWireframe( Renderer& renderer, const VolumeTest& volume, const Matrix4& localToWorld, bool selected ) const {
+		const bool hasIcon = m_entity.getEntityClass().m_state_icon != nullptr;
 		renderer.SetState( m_entity.getEntityClass().m_state_wire, Renderer::eWireframeOnly );
-		renderer.addRenderable( m_aabb_wire, localToWorld );
+		if ( !hasIcon ) {
+			renderer.addRenderable( m_aabb_wire, localToWorld );
+		}
+		renderIcon( renderer, localToWorld, Renderer::eWireframeOnly, selected );
 		renderArrow( renderer, volume, localToWorld );
 		if ( selected || ( g_showNames && aabb_fits_view( m_aabb_local, volume.GetModelview(), volume.GetViewport(), g_showNamesRatio ) ) ) {
 			m_renderName.render( renderer, volume, localToWorld, selected );

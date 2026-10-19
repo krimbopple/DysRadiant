@@ -168,7 +168,7 @@ public:
 		gl().glEnd();
 #endif
 
-#if defined( _DEBUG ) && !defined( _DEBUG_QUICKER )
+#if defined( _DEBUG ) && defined( RADIANT_DEBUG_NORMALS )
 		gl().glBegin( GL_LINES );
 
 		for ( const auto& v : m_vertices )

@@ -27,11 +27,13 @@
 #include <set>
 #include <format>
 
+#include "qerplugin.h"
 #include "texwindow.h"
 
 #include "iscriplib.h"
 
 #include "string/string.h"
+#include "shaderlib.h"
 #include "eclasslib.h"
 #include "os/path.h"
 #include "stream/stringstream.h"
@@ -197,6 +199,30 @@ static void addSizeToEntity( EntityClass* entityClass, const toolpp::FGD::Entity
 	}
 }
 
+static void addIconToEntity( EntityClass* entityClass, const toolpp::FGD::Entity& entity ) {
+	if ( !entityClass->m_iconsprite.empty() ) {
+		return;
+	}
+	if ( auto iconProperty = findClassProperty( entity, "iconsprite" ); iconProperty != entity.classProperties.end() ) {
+		if ( !(*iconProperty).arguments.empty() ) {
+			StringInputStream istream( (*iconProperty).arguments );
+			Tokeniser& tokeniser = GlobalScriptLibrary().m_pfnNewScriptTokeniser( istream );
+			auto iconName = StringStream<64>( PathCleaned( tokeniser.getToken() ) );
+			const char* extension = path_get_extension( iconName.c_str() );
+			if ( !string_empty( extension ) ) {
+				iconName.c_str()[string_length( iconName.c_str() ) - string_length( extension ) - 1] = '\0';
+			}
+			const char* prefix = GlobalTexturePrefix_get();
+			if ( shader_equal_prefix( iconName.c_str(), prefix ) ) {
+				entityClass->m_iconsprite = string_to_lowercase( iconName.c_str() );
+			}
+			else {
+				entityClass->m_iconsprite = StringStream<128>( prefix, string_to_lowercase( iconName.c_str() ) ).c_str();
+			}
+		}
+	}
+}
+
 static void addModelToEntity( EntityClass* entityClass, const toolpp::FGD::Entity& entity ) {
 	if ( !entityClass->m_modelpath.empty() || entityClass->miscmodel_is ) {
 		return;
@@ -289,6 +315,7 @@ static void addBaseAttributes( EntityClass* entityClass, const std::unordered_ma
 				entityClass->m_parent.push_back( baseClassName );
 				addMiscToEntity( entityClass, baseClass->second );
 				addModelToEntity( entityClass, baseClass->second );
+				addIconToEntity( entityClass, baseClass->second );
 				addSizeToEntity( entityClass, baseClass->second );
 				addColorToEntity( entityClass, baseClass->second );
 				addChoicesToEntity( entityClass, baseClass->second.fieldsWithChoices );
@@ -357,6 +384,7 @@ void Eclass_ScanFile_fgd( EntityClassCollector& collector, const char *filename 
 
 		addMiscToEntity( entityClass, entity );
 		addModelToEntity( entityClass, entity );
+		addIconToEntity( entityClass, entity );
 		addSizeToEntity( entityClass, entity );
 		addColorToEntity( entityClass, entity );
 		addChoicesToEntity( entityClass, entity.fieldsWithChoices );
@@ -387,8 +415,12 @@ void EClass_finalize_fgd( EntityClassCollector& collector ){
 #include "modulesystem/singletonmodule.h"
 #include "modulesystem/moduleregistry.h"
 
-class EntityClassFgdDependencies : public GlobalShaderCacheModuleRef, public GlobalScripLibModuleRef
+class EntityClassFgdDependencies : public GlobalShaderCacheModuleRef, public GlobalShadersModuleRef, public GlobalScripLibModuleRef
 {
+public:
+	EntityClassFgdDependencies() :
+		GlobalShadersModuleRef( GlobalRadiant().getRequiredGameDescriptionKeyValue( "shaders" ) ){
+	}
 };
 
 class EclassFgdAPI

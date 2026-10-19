@@ -119,6 +119,7 @@ public:
 	Shader* m_state_fill;
 	Shader* m_state_wire;
 	Shader* m_state_blend;
+	Shader* m_state_icon;
 
 	CopiedString m_comments;
 	CopiedString flagNames[MAX_FLAGS];
@@ -141,6 +142,7 @@ public:
 
 	CopiedString m_modelpath;
 	CopiedString m_skin;
+	CopiedString m_iconsprite;
 
 	void ( *free )( EntityClass* );
 
@@ -286,12 +288,19 @@ inline void eclass_capture_state( EntityClass* eclass ){
 	eclass->m_state_fill = colour_capture_state_fill( eclass->color );
 	eclass->m_state_wire = colour_capture_state_wire( eclass->color );
 	eclass->m_state_blend = colour_capture_state_blend( eclass->color );
+	if ( !eclass->m_iconsprite.empty() ) {
+		eclass->m_state_icon = GlobalShaderCache().capture( eclass->m_iconsprite.c_str() );
+	}
 }
 
 inline void eclass_release_state( EntityClass* eclass ){
 	colour_release_state_fill( eclass->color );
 	colour_release_state_wire( eclass->color );
 	colour_release_state_blend( eclass->color );
+	if ( eclass->m_state_icon != nullptr ) {
+		GlobalShaderCache().release( eclass->m_iconsprite.c_str() );
+		eclass->m_state_icon = nullptr;
+	}
 }
 
 // eclass constructor
@@ -307,6 +316,7 @@ inline EntityClass* Eclass_Alloc(){
 	e->has_angles = false;
 	e->has_angles_key = false;
 	e->has_direction_key = false;
+	e->m_state_icon = nullptr;
 	memset( e->flagAttributes, 0, sizeof( e->flagAttributes ) );
 
 	e->maxs = Vector3(-1,-1,-1 );

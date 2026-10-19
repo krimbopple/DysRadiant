@@ -130,10 +130,7 @@ public:
 		if ( ( m_mode & Archive::eDirectories ) != 0 ) {
 			m_visitor->visit( name );
 		}
-		if ( depth == m_depth ) {
-			return true;
-		}
-		return false;
+		return depth <= m_depth;
 	}
 };
 

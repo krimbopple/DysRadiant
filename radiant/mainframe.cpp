@@ -2003,10 +2003,9 @@ void GlobalGL_sharedContextCreated(){
 
 	ShaderCache_extensionsInitialised();
 
+	GlobalOpenGL().m_font = glfont_create( g_OpenGLFont.c_str(), g_OpenGLFontSize, g_strAppPath.c_str() );
 	GlobalShaderCache().realise();
 	Textures_Realise();
-
-	GlobalOpenGL().m_font = glfont_create( g_OpenGLFont.c_str(), g_OpenGLFontSize, g_strAppPath.c_str() );
 }
 
 void GlobalGL_sharedContextDestroyed(){
