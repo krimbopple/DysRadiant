@@ -2480,7 +2480,7 @@ public:
 		}
 	}
 	void testSelect( const View& view, const Matrix4& pivot2world ) override {
-		if( g_modifiers != c_modifierNone )
+		if( g_modifiers != c_modifierNone && g_modifiers != c_modifierShift )
 			return selectionChange( nullptr );
 
 		m_pivot.update( pivot2world, view.GetModelview(), view.GetProjection(), view.GetViewport() );
@@ -6917,6 +6917,7 @@ private:
 
 // state
 	bool m_undo_begun;
+	bool m_dragClone;
 	EMode m_mode;
 	EComponentMode m_componentmode;
 
@@ -6969,6 +6970,7 @@ public:
 	RadiantSelectionSystem() :
 		m_bPreferPointEntsIn2D( true ),
 		m_undo_begun( false ),
+		m_dragClone( false ),
 		m_mode( ePrimitive ),
 		m_componentmode( eDefault ),
 		m_count_primitive( SelectionChangedCaller( *this ) ),
@@ -7105,7 +7107,8 @@ public:
 	void setSelectedAll( bool selected ) override {
 		GlobalSceneGraph().traverse( select_all( selected ) );
 
-		m_manipulator->setSelected( selected );
+		if ( !m_dragClone ) // keep the manipulator grabbed while shift-duplicating
+			m_manipulator->setSelected( selected );
 	}
 	void setSelectedAllComponents( bool selected ) override {
 		Scene_SelectAll_Component( selected, SelectionSystem::eVertex );
@@ -7175,6 +7178,8 @@ public:
 			startMove();
 
 			m_pivot_moving = m_manipulator->isSelected();
+
+			m_dragClone = m_pivot_moving && g_modifiers == c_modifierShift && ManipulatorMode() == eTranslate;
 
 			if ( m_pivot_moving || movingOrigin ) {
 				Pivot2World pivot;
@@ -7649,6 +7654,12 @@ public:
 			if ( !m_undo_begun ) {
 				m_undo_begun = true;
 				GlobalUndoSystem().start();
+
+				if ( m_dragClone ) {
+					extern void Scene_Clone_Selected();
+					Scene_Clone_Selected();
+					m_dragClone = false;
+				}
 			}
 
 			Matrix4 device2manip;
@@ -7927,6 +7938,7 @@ bool RadiantSelectionSystem::endMove(){
 	}
 
 	m_pivot_moving = false;
+	m_dragClone = false;
 	pivotChanged();
 
 	SceneChangeNotify();

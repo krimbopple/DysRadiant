@@ -1518,12 +1518,7 @@ void CamWnd_Move_Discrete_Import( bool value ){
 
 
 
-void CamWnd_Add_Handlers_FreeMove( CamWnd& camwnd );
-void CamWnd_Remove_Handlers_FreeMove( CamWnd& camwnd );
-
 void CamWnd_Add_Handlers_Move( CamWnd& camwnd ){
-	CamWnd_Add_Handlers_FreeMove( camwnd );
-
 	if ( g_camwindow_globals_private.m_bCamDiscrete ) {
 		CamWnd_Move_Discrete_Enable( camwnd );
 	}
@@ -1534,8 +1529,6 @@ void CamWnd_Add_Handlers_Move( CamWnd& camwnd ){
 }
 
 void CamWnd_Remove_Handlers_Move( CamWnd& camwnd ){
-	CamWnd_Remove_Handlers_FreeMove( camwnd );
-
 	if ( g_camwindow_globals_private.m_bCamDiscrete ) {
 		CamWnd_Move_Discrete_Disable( camwnd );
 	}
