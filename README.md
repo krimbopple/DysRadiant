@@ -2,7 +2,7 @@
 
 The open-source, cross-platform level editor for idTech, Source Engine, and GoldSrc based games.
 
-Nightly, weekly, and monthly builds can be found [on my Patreon](https://www.patreon.com/c/erysdren).
+DysRadiant is a fork of [WifeRadiant](https://github.com/erysdren/WifeRadiant) that leans toward Hammer's tools, layout and shortcuts while keeping the best of Radiant.
 
 ## THIS PROJECT IS STILL IN AN EARLY ALPHA STATE!<br/>DO NOT OVERWRITE HAMMER-MADE VMFS WITH THIS!<br/>MAKE BACKUPS!
 
@@ -34,6 +34,7 @@ directory.
 
 ## Credits
 
+- [WifeRadiant](https://github.com/erysdren/WifeRadiant)
 - [sourcepp](https://github.com/craftablescience/sourcepp)
 - [NetRadiant](https://netradiant.gitlab.io/)
 - [NetRadiant-custom](https://github.com/Garux/netradiant-custom)
