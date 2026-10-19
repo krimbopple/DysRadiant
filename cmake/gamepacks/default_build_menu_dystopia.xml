@@ -23,34 +23,28 @@ Dystopia's own compiler binaries are... BROKEN! so we have to compile with SDK 2
        <command>[BspExecutable] "[MapFile]"</command>
        <command>[VisExecutable] "[BspFile]"</command>
        <command>[RadExecutable] "[BspFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
   <build name="Fast">
        <command>[BspExecutable] "[MapFile]"</command>
        <command>[VisExecutable] -fast "[BspFile]"</command>
        <command>[RadExecutable] -fast "[BspFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
   <build name="HDR Fast Compile">
        <command>[BspExecutable] "[MapFile]"</command>
        <command>[VisExecutable] -fast "[BspFile]"</command>
        <command>[RadExecutable] -fast -hdr "[BspFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
   <build name="HDR Full Compile">
        <command>[BspExecutable] "[MapFile]"</command>
        <command>[VisExecutable] "[BspFile]"</command>
        <command>[RadExecutable] -hdr "[BspFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
   <build name="HDR Final Compile (slow!)">
        <command>[BspExecutable] "[MapFile]"</command>
        <command>[VisExecutable] "[BspFile]"</command>
        <command>[RadExecutable] -final -hdr "[BspFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
   <build name="Only Entities">
        <command>[BspExecutable] -onlyents "[MapFile]"</command>
-       <command>[CopyCommand] "[BspFile]" "[MapsPath]"</command>
   </build>
 </project>
