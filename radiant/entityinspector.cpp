@@ -51,7 +51,9 @@
 #include <QButtonGroup>
 #include <QToolTip>
 #include <QDialog>
-#include <QTableWidget>
+#include <QCloseEvent>
+#include <QTabWidget>
+#include <QListWidget>
 #include <QInputDialog>
 #include <QComboBox>
 #include <QTimer>
@@ -93,6 +95,8 @@ typedef std::list<EntityOutput*> Outputs;
 Outputs g_selectedOutputs;
 }
 
+static Entity* g_mapPropertiesTarget = nullptr;
+
 const char* SelectedEntity_getValueForKey( const char* key ){
 	{
 		KeyValues::const_iterator i = g_selectedKeyValues.find( key );
@@ -112,7 +116,13 @@ const char* SelectedEntity_getValueForKey( const char* key ){
 void Scene_EntitySetKeyValue_Selected_Undoable( const char* key, const char* value ){
 	const auto command = StringStream( "entitySetKeyValue -key ", Quoted( key ), " -value ", Quoted( value ) );
 	UndoableCommand undo( command );
-	Scene_EntitySetKeyValue_Selected( key, value );
+	if ( g_mapPropertiesTarget != nullptr ) {
+		g_mapPropertiesTarget->setKeyValue( key, value );
+	}
+	else
+	{
+		Scene_EntitySetKeyValue_Selected( key, value );
+	}
 }
 
 
@@ -862,26 +872,30 @@ void Entity_GetKeyValues( const Entity& entity, KeyValues& keyvalues, KeyValues&
 	}
 }
 
-void Entity_GetKeyValues_Selected( KeyValues& keyvalues, KeyValues& defaultValues ){
+void Entity_GetKeyValues_Selected( KeyValues& keyvalues, KeyValues& defaultValues, bool includeWorld = true ){
 	class EntityGetKeyValues : public SelectionSystem::Visitor
 	{
 		KeyValues& m_keyvalues;
 		KeyValues& m_defaultValues;
+		const bool m_includeWorld;
 		mutable std::set<Entity*> m_visited;
 	public:
-		EntityGetKeyValues( KeyValues& keyvalues, KeyValues& defaultValues )
-			: m_keyvalues( keyvalues ), m_defaultValues( defaultValues ){
+		EntityGetKeyValues( KeyValues& keyvalues, KeyValues& defaultValues, bool includeWorld )
+			: m_keyvalues( keyvalues ), m_defaultValues( defaultValues ), m_includeWorld( includeWorld ){
 		}
 		void visit( scene::Instance& instance ) const override {
 			Entity* entity = Node_getEntity( instance.path().top() );
 			if ( entity == 0 && instance.path().size() != 1 ) {
 				entity = Node_getEntity( instance.path().parent() );
 			}
+			if ( entity != 0 && !m_includeWorld && string_equal( entity->getClassName(), "worldspawn" ) ) {
+				entity = 0; // world brushes have no editable entity
+			}
 			if ( entity != 0 && m_visited.insert( entity ).second ) {
 				Entity_GetKeyValues( *entity, m_keyvalues, m_defaultValues );
 			}
 		}
-	} visitor( keyvalues, defaultValues );
+	} visitor( keyvalues, defaultValues, includeWorld );
 	GlobalSelectionSystem().foreachSelected( visitor );
 }
 
@@ -899,24 +913,28 @@ void Entity_GetOutputs( Entity& entity, Outputs& outputs ){
 	entity.forEachOutput( visitor );
 }
 
-void Entity_GetOutputs_Selected( Outputs& outputs ){
+void Entity_GetOutputs_Selected( Outputs& outputs, bool includeWorld = true ){
 	class EntityGetKeyValues : public SelectionSystem::Visitor
 	{
 		Outputs& m_outputs;
+		const bool m_includeWorld;
 		mutable std::set<Entity*> m_visited;
 	public:
-		EntityGetKeyValues( Outputs& outputs ) : m_outputs( outputs ) {
+		EntityGetKeyValues( Outputs& outputs, bool includeWorld ) : m_outputs( outputs ), m_includeWorld( includeWorld ) {
 		}
 		void visit( scene::Instance& instance ) const override {
 			Entity* entity = Node_getEntity( instance.path().top() );
 			if ( entity == 0 && instance.path().size() != 1 ) {
 				entity = Node_getEntity( instance.path().parent() );
 			}
+			if ( entity != 0 && !m_includeWorld && string_equal( entity->getClassName(), "worldspawn" ) ) {
+				entity = 0; // world brushes have no editable entity
+			}
 			if ( entity != 0 && m_visited.insert( entity ).second ) {
 				Entity_GetOutputs( *entity, m_outputs );
 			}
 		}
-	} visitor( outputs );
+	} visitor( outputs, includeWorld );
 	GlobalSelectionSystem().foreachSelected( visitor );
 }
 
@@ -995,6 +1013,10 @@ void SpawnFlags_setEntityClass( EntityClass* eclass ){
 
 	g_current_flags = eclass;
 
+	if ( eclass == nullptr ) {
+		return;
+	}
+
 	// count up and display flag fields
 	for ( const auto& [key, value] : eclass->flags ) {
 		if ( !value.displayName.empty() ) {
@@ -1027,6 +1049,10 @@ void SpawnFlags_setEntityClass( EntityClass* eclass ){
 }
 
 void EntityClassList_selectEntityClass( EntityClass* eclass ){
+	if ( eclass == nullptr ) {
+		g_entityClassList->setCurrentItem( nullptr );
+		return;
+	}
 	const auto list = g_entityClassList->findItems( eclass->name(), Qt::MatchFlag::MatchFixedString );
 	g_entityClassList->setCurrentItem( !list.isEmpty()
 	                                   ? list.first()
@@ -1043,6 +1069,113 @@ void EntityInspector_appendAttribute( const EntityClassAttributePair& attributeP
 	DialogGrid_packRow( g_attributeBox, attribute.getWidget(), label );
 }
 
+
+class TargetAttribute final : public EntityAttribute
+{
+	const CopiedString m_key;
+	QComboBox* m_combo;
+public:
+	TargetAttribute( const char* key ) :
+		m_key( key ),
+		m_combo( new QComboBox )
+	{
+		m_combo->setEditable( true );
+
+		class CollectTargets : public scene::Graph::Walker
+		{
+		public:
+			mutable std::set<std::string> m_names;
+			bool pre( const scene::Path& path, scene::Instance& instance ) const override {
+				return true;
+			}
+			void post( const scene::Path& path, scene::Instance& instance ) const override {
+				Entity* entity = Node_getEntity( path.top() );
+				if ( entity != nullptr ) {
+					const char* name = entity->getKeyValue( "targetname" );
+					if ( !string_empty( name ) ) {
+						m_names.insert( name );
+					}
+				}
+			}
+		} collect;
+		GlobalSceneGraph().traverse( collect );
+		for ( const std::string& name : collect.m_names ) {
+			m_combo->addItem( name.c_str() );
+		}
+
+		QObject::connect( m_combo, &QComboBox::textActivated, [this]( const QString& ){ apply(); } );
+		QObject::connect( m_combo->lineEdit(), &QLineEdit::editingFinished, [this](){ apply(); } );
+	}
+	QWidget* getWidget() const override {
+		return m_combo;
+	}
+	void release() override {
+		delete this;
+	}
+	void apply(){
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), m_combo->currentText().toLatin1().constData() );
+	}
+	void update() override {
+		m_combo->setCurrentText( SelectedEntity_getValueForKey( m_key.c_str() ) );
+	}
+};
+
+class FlagsAttribute final : public EntityAttribute
+{
+	const CopiedString m_key;
+	QWidget* m_container;
+	struct FlagBox {
+		QCheckBox* check;
+		int bit;
+	};
+	std::vector<FlagBox> m_boxes;
+public:
+	FlagsAttribute( const char* key, const EntityClass& eclass ) :
+		m_key( key ),
+		m_container( new QWidget )
+	{
+		auto *vbox = new QVBoxLayout( m_container );
+		vbox->setContentsMargins( 0, 0, 0, 0 );
+
+		const auto i = eclass.flags.find( key );
+		if ( i != eclass.flags.end() ) {
+			for ( int bit = 0; bit < MAX_FLAGS; ++bit ) {
+				const EntityClass::Flag& flag = i->second.flags[bit];
+				if ( flag.displayName.empty() ) {
+					continue;
+				}
+				auto *check = new QCheckBox( flag.displayName.c_str() );
+				QObject::connect( check, &QAbstractButton::clicked, [this](){ apply(); } );
+				vbox->addWidget( check );
+				m_boxes.push_back( { check, bit } );
+			}
+		}
+		update();
+	}
+	QWidget* getWidget() const override {
+		return m_container;
+	}
+	void release() override {
+		delete this;
+	}
+	void apply(){
+		int mask = 0;
+		for ( const FlagBox& box : m_boxes ) {
+			if ( box.check->isChecked() ) {
+				mask |= ( 1 << box.bit );
+			}
+		}
+		char value[16];
+		snprintf( value, sizeof( value ), "%d", mask );
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), value );
+	}
+	void update() override {
+		const int mask = atoi( SelectedEntity_getValueForKey( m_key.c_str() ) );
+		for ( const FlagBox& box : m_boxes ) {
+			box.check->setChecked( ( mask & ( 1 << box.bit ) ) != 0 );
+		}
+	}
+};
 
 template<typename Attribute>
 class StatelessAttributeCreator
@@ -1071,7 +1204,7 @@ public:
 		m_creators.insert( Creators::value_type( "real3", &StatelessAttributeCreator<Vector3Attribute>::create ) );
 		m_creators.insert( Creators::value_type( "angles", &StatelessAttributeCreator<AnglesAttribute>::create ) );
 		m_creators.insert( Creators::value_type( "color", &StatelessAttributeCreator<ColorAttribute>::create ) );
-		m_creators.insert( Creators::value_type( "target", &StatelessAttributeCreator<StringAttribute>::create ) );
+		m_creators.insert( Creators::value_type( "target", &StatelessAttributeCreator<TargetAttribute>::create ) );
 		m_creators.insert( Creators::value_type( "targetname", &StatelessAttributeCreator<StringAttribute>::create ) );
 		m_creators.insert( Creators::value_type( "sound", &StatelessAttributeCreator<SoundAttribute>::create ) );
 		m_creators.insert( Creators::value_type( "shader", &StatelessAttributeCreator<ShaderAttribute>::create ) );
@@ -1109,12 +1242,14 @@ void EntityInspector_setEntityClass( EntityClass *eclass ){
 		g_attributeBox->update(); // trigger scrollbar update
 		GlobalEntityAttributes_clear();
 
-		for ( const EntityClassAttributePair &pair : eclass->m_attributes )
-		{
-			EntityAttribute* attribute = GlobalEntityAttributeFactory::instance().create( pair.second.m_type.c_str(), pair.first.c_str() );
-			if ( attribute != 0 ) {
-				g_entityAttributes.push_back( attribute );
-				EntityInspector_appendAttribute( pair, *g_entityAttributes.back() );
+		if ( eclass != nullptr ) {
+			for ( const EntityClassAttributePair &pair : eclass->m_attributes )
+			{
+				EntityAttribute* attribute = GlobalEntityAttributeFactory::instance().create( pair.second.m_type.c_str(), pair.first.c_str() );
+				if ( attribute != 0 ) {
+					g_entityAttributes.push_back( attribute );
+					EntityInspector_appendAttribute( pair, *g_entityAttributes.back() );
+				}
 			}
 		}
 	}
@@ -1165,6 +1300,25 @@ public:
 	}
 };
 
+void EntityOutputs_Fill( QTreeWidget* tree ){
+	if ( !string_equal( GlobalRadiant().getGameDescriptionKeyValue( "no_outputs" ), "0" ) ) {
+		return;
+	}
+	g_selectedOutputs.clear();
+	Entity_GetOutputs_Selected( g_selectedOutputs, g_mapPropertiesTarget != nullptr );
+	tree->clear();
+	for ( auto* output : g_selectedOutputs )
+	{
+		QStringList list = QString(output->value().c_str()).split(output->separator());
+		list = QStringList{ output->key().c_str() } + list;
+		OutputTreeWidgetItem* item = new OutputTreeWidgetItem( list, output );
+		item->setFlags(item->flags() | Qt::ItemIsEditable);
+		tree->addTopLevelItem( item );
+	}
+	for ( int i = 0; i < 6; i++ )
+		tree->resizeColumnToContents( i );
+}
+
 void EntityInspector_updateKeyValues(){
 	g_selectedKeyValues.clear();
 	g_selectedDefaultKeyValues.clear();
@@ -1174,9 +1328,10 @@ void EntityInspector_updateKeyValues(){
 		}
 		value.groupBox->hide();
 	}
-	Entity_GetKeyValues_Selected( g_selectedKeyValues, g_selectedDefaultKeyValues );
+	Entity_GetKeyValues_Selected( g_selectedKeyValues, g_selectedDefaultKeyValues, false );
 
-	EntityInspector_setEntityClass( GlobalEntityClassManager().findOrInsert( keyvalues_valueforkey( g_selectedKeyValues, "classname" ), false ) );
+	const char* classname = keyvalues_valueforkey( g_selectedKeyValues, "classname" );
+	EntityInspector_setEntityClass( string_empty( classname ) ? nullptr : GlobalEntityClassManager().findOrInsert( classname, false ) );
 
 	EntityInspector_updateSpawnflags();
 
@@ -1187,24 +1342,7 @@ void EntityInspector_updateKeyValues(){
 		g_entprops_store->addTopLevelItem( new QTreeWidgetItem( { key.c_str(), value.c_str() } ) );
 	}
 
-	// walk through outputs and add
-	if ( string_equal( GlobalRadiant().getGameDescriptionKeyValue( "no_outputs" ), "0" ) )
-	{
-		g_selectedOutputs.clear();
-		Entity_GetOutputs_Selected( g_selectedOutputs );
-		g_entoutputs_store->clear();
-		for ( auto* output : g_selectedOutputs )
-		{
-			QStringList list = QString(output->value().c_str()).split(output->separator());
-			list = QStringList{ output->key().c_str() } + list;
-			OutputTreeWidgetItem* item = new OutputTreeWidgetItem( list, output );
-			item->setFlags(item->flags() | Qt::ItemIsEditable);
-			g_entoutputs_store->addTopLevelItem( item );
-		}
-		// resize to column contents
-		for ( int i = 0; i < 6; i++ )
-			g_entoutputs_store->resizeColumnToContents( i );
-	}
+	EntityOutputs_Fill( g_entoutputs_store );
 
 	for ( EntityAttribute *attr : g_entityAttributes )
 	{
@@ -1227,12 +1365,35 @@ EntityInspectorDraw g_EntityInspectorDraw;
 
 
 // Object properties
-// TODO: reuse the entity attributes here for smartedit
 
 static QDialog* g_objectProperties = nullptr;
-static QTableWidget* g_objectPropertiesTable = nullptr;
+static QTabWidget* g_objectPropertiesTabs = nullptr;
+static QListWidget* g_objectPropertiesKeys = nullptr;
+static QVBoxLayout* g_objectPropertiesEditorBox = nullptr;
+static QLabel* g_objectPropertiesDescription = nullptr;
+static QVBoxLayout* g_objectPropertiesFlagsBox = nullptr;
+static QTreeWidget* g_objectPropertiesOutputs = nullptr;
+static EntityAttribute* g_objectPropertiesEditor = nullptr;
+static std::vector<EntityAttribute*> g_objectPropertiesFlags;
+
+void EntityOutputs_Fill( QTreeWidget* tree );
+void EntityOutputs_AddItem( QTreeWidget* tree );
+void EntityOutputs_RemoveItem( QTreeWidget* tree );
+void EntityOutputs_ItemChanged( QTreeWidgetItem* item, int column );
 
 static void ObjectProperties_refresh();
+
+static const EntityClassAttribute* ObjectProperties_findAttribute( const char* key ){
+	if ( g_current_attributes == nullptr ) {
+		return nullptr;
+	}
+	for ( const auto& pair : g_current_attributes->m_attributes ) {
+		if ( string_equal_nocase( pair.first.c_str(), key ) ) {
+			return &pair.second;
+		}
+	}
+	return nullptr;
+}
 
 static void ObjectProperties_applyClass( const QString& text ){
 	const QByteArray name = text.toLatin1();
@@ -1331,98 +1492,290 @@ static void ObjectProperties_fillClassCombo( QComboBox& combo ){
 	}
 }
 
-static void ObjectProperties_refresh(){
-	if ( g_objectPropertiesTable == nullptr ) {
+static void ObjectProperties_showEditor( const char* key ){
+	while ( QLayoutItem* item = g_objectPropertiesEditorBox->takeAt( 0 ) ) {
+		delete item->widget();
+		delete item;
+	}
+	if ( g_objectPropertiesEditor != nullptr ) {
+		g_objectPropertiesEditor->release();
+		g_objectPropertiesEditor = nullptr;
+	}
+	g_objectPropertiesDescription->clear();
+
+	if ( key == nullptr ) {
 		return;
 	}
-	EntityInspector_updateKeyValues();
-	g_objectPropertiesTable->blockSignals( true );
-	g_objectPropertiesTable->setRowCount( 0 );
-	for ( const auto& [key, value] : g_selectedKeyValues ) {
-		const int row = g_objectPropertiesTable->rowCount();
-		g_objectPropertiesTable->insertRow( row );
-		auto *keyItem = new QTableWidgetItem( key.c_str() );
-		keyItem->setFlags( keyItem->flags() & ~Qt::ItemIsEditable );
-		g_objectPropertiesTable->setItem( row, 0, keyItem );
-		if ( string_equal_nocase( key.c_str(), "classname" ) ) {
-			auto *combo = new QComboBox( g_objectPropertiesTable );
-			ObjectProperties_fillClassCombo( *combo );
-			combo->setCurrentText( value.c_str() );
-			QObject::connect( combo, &QComboBox::textActivated, []( const QString& name ){
-				QTimer::singleShot( 0, [name](){ ObjectProperties_applyClass( name ); } );
-			} );
-			g_objectPropertiesTable->setCellWidget( row, 1, combo );
+
+	if ( string_equal_nocase( key, "classname" ) ) {
+		auto *combo = new QComboBox;
+		ObjectProperties_fillClassCombo( *combo );
+		combo->setCurrentText( keyvalues_valueforkey( g_selectedKeyValues, "classname" ) );
+		QObject::connect( combo, &QComboBox::textActivated, []( const QString& name ){
+			QTimer::singleShot( 0, [name](){ ObjectProperties_applyClass( name ); } );
+		} );
+		g_objectPropertiesEditorBox->addWidget( combo );
+	}
+	else
+	{
+		const EntityClassAttribute* definition = ObjectProperties_findAttribute( key );
+		EntityAttribute* editor = nullptr;
+		if ( definition != nullptr ) {
+			editor = string_equal( definition->m_type.c_str(), "flag" ) && g_current_attributes != nullptr
+			         ? static_cast<EntityAttribute*>( new FlagsAttribute( key, *g_current_attributes ) )
+			         : GlobalEntityAttributeFactory::instance().create( definition->m_type.c_str(), key );
 		}
-		else {
-			g_objectPropertiesTable->setItem( row, 1, new QTableWidgetItem( value.c_str() ) );
+		if ( editor != nullptr ) {
+			editor->update();
+			g_objectPropertiesEditor = editor;
+			g_objectPropertiesEditorBox->addWidget( editor->getWidget() );
+		}
+		else
+		{
+			auto *entry = new QLineEdit( keyvalues_valueforkey( g_selectedKeyValues, key ) );
+			QObject::connect( entry, &QLineEdit::editingFinished, [key = CopiedString( key ), entry](){
+				Scene_EntitySetKeyValue_Selected_Undoable( key.c_str(), entry->text().toLatin1().constData() );
+			} );
+			g_objectPropertiesEditorBox->addWidget( entry );
+		}
+		if ( definition != nullptr ) {
+			g_objectPropertiesDescription->setText( definition->m_description.c_str() );
 		}
 	}
-	g_objectPropertiesTable->blockSignals( false );
 }
 
+static void ObjectProperties_refresh(){
+	if ( g_objectProperties == nullptr ) {
+		return;
+	}
+	if ( g_mapPropertiesTarget != nullptr ) {
+		g_selectedKeyValues.clear();
+		g_selectedDefaultKeyValues.clear();
+		KeyValues defaultValues;
+		Entity_GetKeyValues( *g_mapPropertiesTarget, g_selectedKeyValues, g_selectedDefaultKeyValues );
+		EntityInspector_setEntityClass( const_cast<EntityClass*>( &g_mapPropertiesTarget->getEntityClass() ) );
+	}
+	else
+	{
+		EntityInspector_updateKeyValues();
+	}
+
+	QString previousKey;
+	if ( QListWidgetItem* current = g_objectPropertiesKeys->currentItem() ) {
+		previousKey = current->data( Qt::ItemDataRole::UserRole ).toString();
+	}
+
+	g_objectPropertiesKeys->blockSignals( true );
+	g_objectPropertiesKeys->clear();
+	auto appendKey = []( const CopiedString& key ){
+		const EntityClassAttribute* definition = ObjectProperties_findAttribute( key.c_str() );
+		auto *item = new QListWidgetItem( definition != nullptr ? definition->m_displayName.c_str() : key.c_str() );
+		item->setData( Qt::ItemDataRole::UserRole, QString( key.c_str() ) );
+		if ( definition != nullptr && !definition->m_description.empty() ) {
+			item->setToolTip( definition->m_description.c_str() );
+		}
+		g_objectPropertiesKeys->addItem( item );
+	};
+	if ( g_mapPropertiesTarget == nullptr ) {
+		if ( const auto i = g_selectedKeyValues.find( "classname" ); i != g_selectedKeyValues.end() ) {
+			appendKey( i->first );
+		}
+	}
+	for ( const auto& [key, value] : g_selectedKeyValues ) {
+		if ( !string_equal_nocase( key.c_str(), "classname" ) ) {
+			appendKey( key );
+		}
+	}
+	g_objectPropertiesKeys->blockSignals( false );
+
+	while ( QLayoutItem* item = g_objectPropertiesFlagsBox->takeAt( 0 ) ) {
+		delete item->widget();
+		delete item;
+	}
+	for ( EntityAttribute* attribute : g_objectPropertiesFlags ) {
+		attribute->release();
+	}
+	g_objectPropertiesFlags.clear();
+	if ( g_current_attributes != nullptr ) {
+		for ( const auto& [key, list] : g_current_attributes->flags ) {
+			auto *attribute = new FlagsAttribute( key.c_str(), *g_current_attributes );
+			attribute->update();
+			g_objectPropertiesFlags.push_back( attribute );
+			g_objectPropertiesFlagsBox->addWidget( attribute->getWidget() );
+		}
+	}
+
+	EntityOutputs_Fill( g_objectPropertiesOutputs );
+
+	int row = 0;
+	for ( int i = 0; i < g_objectPropertiesKeys->count(); ++i ) {
+		if ( g_objectPropertiesKeys->item( i )->data( Qt::ItemDataRole::UserRole ).toString() == previousKey ) {
+			row = i;
+			break;
+		}
+	}
+	if ( g_objectPropertiesKeys->count() != 0 ) {
+		g_objectPropertiesKeys->setCurrentRow( row );
+		ObjectProperties_showEditor( g_objectPropertiesKeys->item( row )->data( Qt::ItemDataRole::UserRole ).toString().toLatin1().constData() );
+	}
+	else
+	{
+		ObjectProperties_showEditor( nullptr );
+	}
+}
+
+class ObjectPropertiesDialog : public QDialog
+{
+public:
+	ObjectPropertiesDialog( QWidget* parent ) : QDialog( parent ) {
+		setWindowFlags( Qt::Dialog | Qt::WindowCloseButtonHint );
+	}
+protected:
+	void closeEvent( QCloseEvent* event ) override {
+		g_mapPropertiesTarget = nullptr;
+		QDialog::closeEvent( event );
+	}
+};
+
 static void ObjectProperties_create(){
-	auto *dialog = new QDialog( MainFrame_getWindow(), Qt::Dialog | Qt::WindowCloseButtonHint );
+	auto *dialog = new ObjectPropertiesDialog( MainFrame_getWindow() );
 	dialog->setWindowTitle( "Object Properties" );
-	dialog->resize( 420, 480 );
+	dialog->resize( 480, 520 );
 	auto *vbox = new QVBoxLayout( dialog );
-	auto *table = new QTableWidget( 0, 2, dialog );
-	table->setHorizontalHeaderLabels( { "Key", "Value" } );
-	table->horizontalHeader()->setStretchLastSection( true );
-	table->verticalHeader()->hide();
-	table->setSelectionBehavior( QAbstractItemView::SelectionBehavior::SelectRows );
-	vbox->addWidget( table );
+	auto *tabs = new QTabWidget( dialog );
+	vbox->addWidget( tabs );
 
-	auto *buttons = new QHBoxLayout;
-	auto *addButton = new QPushButton( "Add Key" );
-	auto *removeButton = new QPushButton( "Remove Key" );
-	buttons->addWidget( addButton );
-	buttons->addWidget( removeButton );
-	buttons->addStretch( 1 );
-	vbox->addLayout( buttons );
+	{	// class info
+		auto *page = new QWidget;
+		auto *hbox = new QHBoxLayout( page );
 
-	auto *closeButton = new QPushButton( "Close" );
-	vbox->addWidget( closeButton );
+		auto *keys = new QListWidget;
+		keys->setMinimumWidth( 140 );
+		keys->setEditTriggers( QAbstractItemView::EditTrigger::NoEditTriggers );
+		hbox->addWidget( keys, 1 );
 
-	QObject::connect( closeButton, &QPushButton::clicked, dialog, &QDialog::hide );
-	QObject::connect( table, &QTableWidget::itemChanged, []( QTableWidgetItem* item ){
-		if ( item == nullptr || item->column() != 1 ) {
-			return;
-		}
-		const QTableWidgetItem* keyItem = g_objectPropertiesTable->item( item->row(), 0 );
-		if ( keyItem != nullptr ) {
-			Scene_EntitySetKeyValue_Selected_Undoable( keyItem->text().toLatin1().constData(), item->text().toLatin1().constData() );
-		}
-	} );
-	QObject::connect( addButton, &QPushButton::clicked, [dialog](){
-		bool ok = false;
-		const QString key = QInputDialog::getText( dialog, "Add Key", "Key name:", QLineEdit::Normal, {}, &ok );
-		if ( ok && !key.isEmpty() ) {
-			Scene_EntitySetKeyValue_Selected_Undoable( key.toLatin1().constData(), "" );
-			ObjectProperties_refresh();
-		}
-	} );
-	QObject::connect( removeButton, &QPushButton::clicked, [table](){
-		const auto rows = table->selectionModel()->selectedRows();
-		for ( const auto& index : rows ) {
-			if ( const QTableWidgetItem* keyItem = table->item( index.row(), 0 ) ) {
-				Scene_EntitySetKeyValue_Selected( keyItem->text().toLatin1().constData(), "" );
+		auto *left = new QVBoxLayout;
+		auto *addButton = new QPushButton( "Add Key" );
+		auto *removeButton = new QPushButton( "Delete Key" );
+		left->addWidget( addButton );
+		left->addWidget( removeButton );
+		left->addStretch( 1 );
+		hbox->addLayout( left );
+
+		auto *right = new QVBoxLayout;
+		auto *editor = new QWidget;
+		auto *editorBox = new QVBoxLayout( editor );
+		editorBox->setContentsMargins( 0, 0, 0, 0 );
+		right->addWidget( editor );
+		auto *description = new QLabel;
+		description->setWordWrap( true );
+		description->setAlignment( Qt::AlignmentFlag::AlignTop );
+		right->addWidget( description );
+		right->addStretch( 1 );
+		hbox->addLayout( right, 2 );
+
+		QObject::connect( keys, &QListWidget::currentItemChanged, []( QListWidgetItem* current, QListWidgetItem* ){
+			ObjectProperties_showEditor( current != nullptr ? current->data( Qt::ItemDataRole::UserRole ).toString().toLatin1().constData() : nullptr );
+		} );
+		QObject::connect( addButton, &QPushButton::clicked, [dialog](){
+			bool ok = false;
+			const QString key = QInputDialog::getText( dialog, "Add Key", "Key name:", QLineEdit::Normal, {}, &ok );
+			if ( ok && !key.isEmpty() ) {
+				Scene_EntitySetKeyValue_Selected_Undoable( key.toLatin1().constData(), "" );
+				QTimer::singleShot( 0, [](){ ObjectProperties_refresh(); } );
 			}
-		}
-		ObjectProperties_refresh();
-	} );
+		} );
+		QObject::connect( removeButton, &QPushButton::clicked, [keys](){
+			if ( QListWidgetItem* current = keys->currentItem() ) {
+				const QByteArray key = current->data( Qt::ItemDataRole::UserRole ).toString().toLatin1();
+				if ( g_mapPropertiesTarget != nullptr ) {
+					g_mapPropertiesTarget->setKeyValue( key.constData(), "" );
+				}
+				else
+				{
+					Scene_EntitySetKeyValue_Selected( key.constData(), "" );
+				}
+				QTimer::singleShot( 0, [](){ ObjectProperties_refresh(); } );
+			}
+		} );
+
+		tabs->addTab( page, "Class Info" );
+		g_objectPropertiesKeys = keys;
+		g_objectPropertiesEditorBox = editorBox;
+		g_objectPropertiesDescription = description;
+	}
+	{	// flags
+		auto *page = new QScrollArea;
+		page->setWidgetResizable( true );
+		auto *content = new QWidget;
+		auto *flagsBox = new QVBoxLayout( content );
+		flagsBox->setAlignment( Qt::AlignmentFlag::AlignTop );
+		page->setWidget( content );
+		tabs->addTab( page, "Flags" );
+		g_objectPropertiesFlagsBox = flagsBox;
+	}
+	{	// outputs
+		auto *page = new QWidget;
+		auto *layout = new QVBoxLayout( page );
+		auto *tree = new QTreeWidget;
+		tree->setColumnCount( 6 );
+		tree->setHeaderLabels( { "Output", "Target", "Input", "Data", "Delay", "Uses" } );
+		layout->addWidget( tree );
+
+		auto *buttons = new QHBoxLayout;
+		auto *addButton = new QPushButton( "Add Output" );
+		auto *removeButton = new QPushButton( "Delete Selected Outputs" );
+		buttons->addWidget( addButton );
+		buttons->addWidget( removeButton );
+		buttons->addStretch( 1 );
+		layout->addLayout( buttons );
+
+		QObject::connect( tree, &QTreeWidget::itemChanged, EntityOutputs_ItemChanged );
+		QObject::connect( addButton, &QPushButton::clicked, [tree](){ EntityOutputs_AddItem( tree ); } );
+		QObject::connect( removeButton, &QPushButton::clicked, [tree](){ EntityOutputs_RemoveItem( tree ); } );
+
+		tabs->addTab( page, "Outputs" );
+		g_objectPropertiesOutputs = tree;
+	}
+
 	QObject::connect( dialog, &QObject::destroyed, [](){
 		g_objectProperties = nullptr;
-		g_objectPropertiesTable = nullptr;
+		g_objectPropertiesTabs = nullptr;
+		g_objectPropertiesKeys = nullptr;
+		g_objectPropertiesEditorBox = nullptr;
+		g_objectPropertiesDescription = nullptr;
+		g_objectPropertiesFlagsBox = nullptr;
+		g_objectPropertiesOutputs = nullptr;
+		g_objectPropertiesEditor = nullptr;
+		g_objectPropertiesFlags.clear();
 	} );
 
 	g_objectProperties = dialog;
-	g_objectPropertiesTable = table;
+	g_objectPropertiesTabs = tabs;
 }
-
 void ObjectProperties_Show(){
+	g_mapPropertiesTarget = nullptr;
 	if ( g_objectProperties == nullptr ) {
 		ObjectProperties_create();
 	}
+	g_objectProperties->setWindowTitle( "Object Properties" );
+	ObjectProperties_refresh();
+	g_objectProperties->show();
+	g_objectProperties->raise();
+	g_objectProperties->activateWindow();
+}
+
+void MapProperties_Show(){
+	scene::Node* world = Map_FindWorldspawn( g_map );
+	Entity* entity = world != nullptr ? Node_getEntity( *world ) : nullptr;
+	if ( entity == nullptr ) {
+		return;
+	}
+	g_mapPropertiesTarget = entity;
+	if ( g_objectProperties == nullptr ) {
+		ObjectProperties_create();
+	}
+	g_objectProperties->setWindowTitle( "Map Properties" );
 	ObjectProperties_refresh();
 	g_objectProperties->show();
 	g_objectProperties->raise();
@@ -1552,7 +1905,7 @@ protected:
 }
 g_pressedKeysFilter;
 
-void EntityOutputs_AddItem(){
+void EntityOutputs_AddItem( QTreeWidget* tree ){
 	class EntityGetKeyValues : public SelectionSystem::Visitor
 	{
 	public:
@@ -1574,8 +1927,8 @@ void EntityOutputs_AddItem(){
 	}
 }
 
-void EntityOutputs_RemoveItem(){
-	auto items = g_entoutputs_store->selectedItems();
+void EntityOutputs_RemoveItem( QTreeWidget* tree ){
+	auto items = tree->selectedItems();
 	for (auto& _item : items) {
 		OutputTreeWidgetItem* item = static_cast<OutputTreeWidgetItem*>(_item);
 		item->m_output->parent().removeOutput(item->m_output);
@@ -1826,12 +2179,12 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 		{
 			auto *b = new QPushButton( "Add Output" );
 			hbox->addWidget( b );
-			QObject::connect( b, &QAbstractButton::clicked, EntityOutputs_AddItem );
+			QObject::connect( b, &QAbstractButton::clicked, [](){ EntityOutputs_AddItem( g_entoutputs_store ); } );
 		}
 		{
 			auto *b = new QPushButton( "Delete Selected Outputs" );
 			hbox->addWidget( b );
-			QObject::connect( b, &QAbstractButton::clicked, EntityOutputs_RemoveItem );
+			QObject::connect( b, &QAbstractButton::clicked, [](){ EntityOutputs_RemoveItem( g_entoutputs_store ); } );
 		}
 		splitter->addWidget( parent );
 	}

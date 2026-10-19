@@ -27,3 +27,4 @@ class QWidget* EntityInspector_constructWindow( QWidget* parent );
 void EntityInspector_construct();
 void EntityInspector_destroy();
 void ObjectProperties_Show();
+void MapProperties_Show();

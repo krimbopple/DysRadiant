@@ -878,6 +878,7 @@ void create_file_menu( QMenuBar *menubar ){
 	create_menu_item_with_mnemonic( menu, "Save re&gion...", "SaveRegion" );
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "&Pointfile", "TogglePointfile" );
+	create_menu_item_with_mnemonic( menu, "&Map Properties", "MapProperties" );
 	menu->addSeparator();
 	MRU_constructMenu( menu );
 	menu->addSeparator();
@@ -2069,6 +2070,7 @@ void MainFrame_Construct(){
 	GlobalCommands_insert( "ToggleConsole", makeCallbackF( Console_ToggleShow ), QKeySequence( "O" ) );
 	GlobalCommands_insert( "ToggleEntityInspector", makeCallbackF( EntityInspector_ToggleShow ), QKeySequence( "N" ) );
 	GlobalCommands_insert( "ObjectProperties", makeCallbackF( ObjectProperties_Show ), QKeySequence( "Alt+Return" ) );
+	GlobalCommands_insert( "MapProperties", makeCallbackF( MapProperties_Show ), QKeySequence( "Shift+Alt+Return" ) );
 	GlobalCommands_insert( "CameraToggleMouselook", makeCallbackF( CamWnd_ToggleMouselook ), QKeySequence( "Z" ) );
 	GlobalCommands_insert( "ToggleModelBrowser", makeCallbackF( ModelBrowser_ToggleShow ), QKeySequence( "/" ) );
 	GlobalCommands_insert( "ToggleLayersBrowser", makeCallbackF( LayersBrowser_ToggleShow ), QKeySequence( "L" ) );

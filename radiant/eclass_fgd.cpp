@@ -120,6 +120,8 @@ static void addFieldsToEntity( EntityClass* entityClass, const std::vector<toolp
 			attribute.m_type = "shader";
 		} else if ( field.valueType == "map" || field.valueType == "instance_file") {
 			attribute.m_type = "map";
+		} else if ( field.valueType == "target_destination" || field.valueType == "target_name_or_class" ) {
+			attribute.m_type = "target";
 		} else {
 			// FIXME: add proper handlers for more Source-specific types in entityinspector.cpp
 			// attribute.m_type = field.valueType;
