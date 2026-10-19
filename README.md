@@ -146,7 +146,7 @@ directory.
 - Investigate inverted angles for stuff like `light_spot` and `light_environment`
 - Investigate inverted angles for certain types of Source MDLs (sourcepp issue?)
 - Support `pitch` keyvalue seperate from `angle` and `angles`
-- Support rendering images and `.spr` files as sprites in-editor
+- ~~Support rendering images and `.spr` files as sprites in-editor~~
 - ~~Add shader directory exclusion stuff to hide `models` directory~~
 	- ~~Respect `@MaterialExclusion` in FGDs~~
 - ~~Hotspot texturing~~
