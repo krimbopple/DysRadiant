@@ -85,6 +85,7 @@ radiant_add_module(entity
 		Qt6::Svg
 		Qt6::OpenGL
 		Qt6::OpenGLWidgets
+		sourcepp::kvpp
 )
 
 radiant_add_module(image

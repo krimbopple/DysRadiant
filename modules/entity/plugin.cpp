@@ -36,6 +36,7 @@
 #include "qerplugin.h"
 #include "namespace.h"
 #include "modelskin.h"
+#include "ifilesystem.h"
 
 #include "typesystem.h"
 
@@ -55,7 +56,8 @@ class EntityDependencies :
 	public GlobalFilterModuleRef,
 	public GlobalPreferenceSystemModuleRef,
 	public GlobalNamespaceModuleRef,
-	public GlobalModelSkinCacheModuleRef
+	public GlobalModelSkinCacheModuleRef,
+	public GlobalFileSystemModuleRef
 {
 };
 

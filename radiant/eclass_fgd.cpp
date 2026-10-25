@@ -237,7 +237,15 @@ static void addModelToEntity( EntityClass* entityClass, const toolpp::FGD::Entit
 			entityClass->m_modelpath = string_to_lowercase( modelNameCleaned.c_str() );
 		}
 	} else if ( auto studioProperty = findClassProperty( entity, "studioprop" ); studioProperty != entity.classProperties.end() ) {
-		entityClass->miscmodel_is = true;
+		if ( !(*studioProperty).arguments.empty() ) {
+			StringInputStream istream( (*studioProperty).arguments );
+			Tokeniser& tokeniser = GlobalScriptLibrary().m_pfnNewScriptTokeniser( istream );
+			auto modelNameCleaned = StringStream<64>( PathCleaned( tokeniser.getToken() ) );
+			entityClass->m_modelpath = string_to_lowercase( modelNameCleaned.c_str() );
+		}
+		else {
+			entityClass->miscmodel_is = true;
+		}
 	} else if ( auto studioProperty = findClassProperty( entity, "model" ); studioProperty != entity.classProperties.end() ) {
 		if ( !(*studioProperty).arguments.empty() ) {
 			// support TrenchBroom syntax
