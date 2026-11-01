@@ -295,7 +295,14 @@ bool writeBake( const fs::path& base, const BakeResult& result, bool cbreStyle, 
 	for ( size_t i = 0; i < result.pages.size(); ++i ) {
 		std::string name = base.filename().string() + "_lm" + ( result.pages.size() > 1 ? "_" + std::to_string( i ) : "" ) + ".png";
 		fs::path out = base.parent_path() / name;
-		if ( !stbi_write_png( out.string().c_str(), result.atlasSize, result.atlasSize, 4, result.pages[ i ].data(), result.atlasSize * 4 ) ) {
+		const size_t pixels = (size_t)result.atlasSize * (size_t)result.atlasSize;
+		std::vector<uint8_t> rgb( pixels * 3 );
+		for ( size_t p = 0; p < pixels; ++p ) {
+			rgb[ p * 3 + 0 ] = result.pages[ i ][ p * 4 + 0 ];
+			rgb[ p * 3 + 1 ] = result.pages[ i ][ p * 4 + 1 ];
+			rgb[ p * 3 + 2 ] = result.pages[ i ][ p * 4 + 2 ];
+		}
+		if ( !stbi_write_png( out.string().c_str(), result.atlasSize, result.atlasSize, 3, rgb.data(), result.atlasSize * 3 ) ) {
 			error = "could not write " + out.string();
 			return false;
 		}

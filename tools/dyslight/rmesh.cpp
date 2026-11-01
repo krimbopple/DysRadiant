@@ -229,9 +229,9 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		}
 
 		if ( batch.lightmapped ) {
-			writeU8( os, 2 ); // TextureType.lightmap
+			writeU8( os, 1 );
 			writeB3DString( os, pageName( batch.page ) );
-			writeU8( os, 1 ); // TextureType.opaque
+			writeU8( os, 1 );
 			writeB3DString( os, texName );
 			writeU32( os, vertCount );
 
