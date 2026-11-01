@@ -339,7 +339,7 @@ static void writeSolid( std::ostream& os, const Solid& solid, int solidId, int& 
 		Vec3 p2 = face.vertices[ 1 ];
 		Vec3 p3 = face.vertices[ 2 ];
 		Vec3 n = ( p2 - p1 ).cross( p3 - p1 ).normalized();
-		if ( n.dot( face.normal ) < 0.0f )
+		if ( n.dot( face.normal ) > 0.0f )
 			std::swap( p2, p3 );
 		os << "\t\tside\n\t\t{\n";
 		os << "\t\t\t\"id\" \"" << ( nextId++ ) << "\"\n";

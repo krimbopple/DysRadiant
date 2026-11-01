@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <cstdlib>
+
 #include "stringio.h"
 #include "stream/stringstream.h"
 #include "brush.h"
@@ -551,6 +553,17 @@ public:
 
 		m_brush.planeChanged();
 		m_brush.shaderChanged();
+
+		if ( std::getenv( "DYS_3DW_DEBUG" ) ) {
+			m_brush.evaluateBRep();
+			std::size_t contributing = 0;
+			for ( const auto& face : m_brush ) {
+				if ( face->contributes() ) {
+					++contributing;
+				}
+			}
+			globalOutputStream() << "3DWDEBUG brush faces=" << m_brush.size() << " contributing=" << contributing << '\n';
+		}
 
 		return true;
 	}

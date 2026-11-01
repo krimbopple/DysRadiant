@@ -21,7 +21,10 @@
 
 #include "map.h"
 
+#include <filesystem>
+#include <QProcess>
 #include "debugging/debugging.h"
+#include "environment.h"
 
 #include "imap.h"
 #include "iselection.h"
@@ -1011,6 +1014,55 @@ public:
 	}
 };
 
+static bool Map_Convert3dwToVmf( const char* filename, CopiedString& converted ){
+	const std::filesystem::path input( filename );
+	std::filesystem::path output = input;
+	output.replace_extension( ".vmf" );
+
+	const std::filesystem::path appPath( environment_get_app_path() );
+	const char* converterNames[] = {
+		"dyslight.x86_64.exe",
+		"dyslight.x86_64",
+		"dyslight.exe",
+		"dyslight",
+	};
+	std::filesystem::path converter;
+	for ( const char* name : converterNames ) {
+		const std::filesystem::path candidate = appPath / name;
+		if ( std::filesystem::exists( candidate ) ) {
+			converter = candidate;
+			break;
+		}
+	}
+	if ( converter.empty() ) {
+		globalErrorStream() << "3DW conversion failed: dyslight executable not found in " << Quoted( appPath.string().c_str() ) << '\n';
+		return false;
+	}
+
+	QProcess process;
+	process.setProcessChannelMode( QProcess::MergedChannels );
+	process.start( QString::fromStdString( converter.string() ), {
+		"--convert",
+		QString::fromStdString( input.string() ),
+		QString::fromStdString( output.string() ),
+	} );
+	if ( !process.waitForStarted() ) {
+		globalErrorStream() << "3DW conversion failed: could not start dyslight\n";
+		return false;
+	}
+	if ( !process.waitForFinished( -1 ) ) {
+		globalErrorStream() << "3DW conversion failed: dyslight did not finish\n";
+		return false;
+	}
+	if ( process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0 ) {
+		globalErrorStream() << "3DW conversion failed: " << process.readAllStandardOutput().constData() << '\n';
+		return false;
+	}
+
+	converted = output.string().c_str();
+	return true;
+}
+
 /*
    ================
    Map_LoadFile
@@ -1018,6 +1070,14 @@ public:
  */
 
 void Map_LoadFile( const char *filename ){
+	CopiedString converted;
+	if ( path_extension_is( filename, "3dw" ) ) {
+		if ( !Map_Convert3dwToVmf( filename, converted ) ) {
+			return;
+		}
+		filename = converted.c_str();
+	}
+
 	globalOutputStream() << "Loading map from " << filename << '\n';
 	ScopeDisableScreenUpdates disableScreenUpdates( "Processing...", "Loading Map" );
 

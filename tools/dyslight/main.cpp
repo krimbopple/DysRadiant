@@ -11,13 +11,25 @@ static void printUsage() {
 	std::cout << "dyslight - CBRE-EX if it was good\n";
 	std::cout << "  1. Bake with CBRE-EX-style lightmaps (default)\n";
 	std::cout << "  2. Bake with 3DWS-style lightmaps\n";
+	std::cout << "  --convert <input.3dw> [output.vmf]\n";
 }
 
 int main( int argc, char** argv ) {
 	int mode = 0;
+	bool convertOnly = false;
 	std::string inputLine;
+	std::string outputLine;
 
-	if ( argc >= 3 ) {
+	if ( argc >= 2 && std::string( argv[ 1 ] ) == "--convert" ) {
+		if ( argc < 3 ) {
+			printUsage();
+			return 1;
+		}
+		convertOnly = true;
+		inputLine = argv[ 2 ];
+		if ( argc >= 4 )
+			outputLine = argv[ 3 ];
+	} else if ( argc >= 3 ) {
 		mode = std::atoi( argv[ 1 ] );
 		inputLine = argv[ 2 ];
 	} else {
@@ -38,7 +50,7 @@ int main( int argc, char** argv ) {
 		}
 	}
 
-	if ( mode != 1 && mode != 2 ) {
+	if ( !convertOnly && mode != 1 && mode != 2 ) {
 		printUsage();
 		return 1;
 	}
@@ -61,8 +73,13 @@ int main( int argc, char** argv ) {
 			std::cerr << "3DW error: " << error << "\n";
 			return 1;
 		}
-		fs::path vmfPath = base;
-		vmfPath += ".vmf";
+		fs::path vmfPath;
+		if ( outputLine.empty() ) {
+			vmfPath = base;
+			vmfPath += ".vmf";
+		} else {
+			vmfPath = fs::path( outputLine );
+		}
 		if ( !writeVmf( vmfPath, map, error ) ) {
 			std::cerr << "VMF error: " << error << "\n";
 			return 1;
@@ -78,6 +95,9 @@ int main( int argc, char** argv ) {
 		std::cerr << "Unsupported input extension: " << ext << "\n";
 		return 1;
 	}
+
+	if ( convertOnly )
+		return 0;
 
 	std::cout << "Map: " << map.name << "\n";
 	std::cout << "Solids: " << map.solids.size() << "\n";

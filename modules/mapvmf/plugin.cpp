@@ -161,6 +161,7 @@ public:
 
 	MapVMFAPI(){
 		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf maps", "*.vmf" ) );
+		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "3dw maps", "*.3dw", true, true, false ) );
 		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf backups", "*.vmx" ) );
 		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf region", "*.reg" ) );
 	}
