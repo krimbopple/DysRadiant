@@ -3,6 +3,8 @@
 
 #include "bake.h"
 
+#include "texture.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -64,7 +66,7 @@ static void ensureBasis( Face& face ) {
 		face.vaxis = n.cross( face.uaxis ).normalized();
 }
 
-BakeResult bakeMap( const Map& map, bool cbreStyle ) {
+BakeResult bakeMap( const Map& map, bool cbreStyle, const fs::path& mapDir ) {
 	BakeResult result;
 	result.atlasSize = cbreStyle ? 1024 : 512;
 	const int atlasSize = result.atlasSize;
@@ -88,7 +90,15 @@ BakeResult bakeMap( const Map& map, bool cbreStyle ) {
 	int globalFace = 0;
 	for ( size_t si = 0; si < map.solids.size(); ++si ) {
 		for ( size_t fi = 0; fi < map.solids[ si ].faces.size(); ++fi ) {
-			Face face = map.solids[ si ].faces[ fi ];
+			const Face& mapFace = map.solids[ si ].faces[ fi ];
+			if ( mapFace.vertices.size() < 3 )
+				continue;
+			if ( lower( mapFace.material ).rfind( "tooltextures/", 0 ) == 0 )
+				continue;
+			if ( textureHasAlpha( mapFace.material, mapDir ) )
+				continue;
+
+			Face face = mapFace;
 			ensureBasis( face );
 
 			float lmScale = face.lmScale > 0.0f ? face.lmScale : 16.0f;

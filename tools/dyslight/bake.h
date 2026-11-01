@@ -43,5 +43,5 @@ struct BakeResult
 };
 
 std::vector<Light> collectLights( const Map& map );
-BakeResult bakeMap( const Map& map, bool cbreStyle );
+BakeResult bakeMap( const Map& map, bool cbreStyle, const fs::path& mapDir );
 bool writeBake( const fs::path& base, const BakeResult& result, bool cbreStyle, std::string& error );

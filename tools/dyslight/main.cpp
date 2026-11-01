@@ -107,7 +107,7 @@ int main( int argc, char** argv ) {
 		std::cout << "Conversion done. Continuing to bake.\n";
 
 	bool cbreStyle = mode == 1;
-	BakeResult baked = bakeMap( map, cbreStyle );
+	BakeResult baked = bakeMap( map, cbreStyle, base.parent_path() );
 	if ( baked.pages.empty() ) {
 		std::cerr << "No bakeable faces found.\n";
 		return 1;

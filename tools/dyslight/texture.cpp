@@ -57,27 +57,53 @@ std::vector<fs::path> textureDirectories( const fs::path& mapDir ) {
 	return dirs;
 }
 
-std::string resolveTextureName( const std::string& material, const fs::path& mapDir ) {
-	std::string name = material;
-	std::replace( name.begin(), name.end(), '\\', '/' );
-	size_t slash = name.find_last_of( '/' );
-	std::string base = slash == std::string::npos ? name : name.substr( slash + 1 );
-	if ( base.find( '.' ) != std::string::npos )
-		return base;
+static const char* const textureExtensions[] = { ".jpeg", ".jpg", ".png" };
 
-	const char* exts[] = { ".jpg", ".png", ".jpeg", ".bmp", ".tga" };
+static std::string normalizeName( const std::string& name ) {
+	std::string out = name;
+	std::replace( out.begin(), out.end(), '\\', '/' );
+	while ( out.rfind( "./", 0 ) == 0 )
+		out.erase( 0, 2 );
+	return out;
+}
+
+static bool findTextureFile( const std::string& material, const fs::path& mapDir, fs::path& out ) {
+	const std::string name = normalizeName( material );
+	const bool hasExtension = fs::path( name ).has_extension();
 	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
-		for ( const char* ext : exts ) {
-			std::error_code ec;
-			fs::path full = dir / ( base + ext );
-			if ( fs::is_regular_file( full, ec ) )
-				return full.filename().string();
-			full = dir / ( name + ext );
-			if ( fs::is_regular_file( full, ec ) )
-				return full.filename().string();
+		std::error_code ec;
+		if ( hasExtension ) {
+			fs::path full = dir / name;
+			if ( fs::is_regular_file( full, ec ) ) {
+				out = full;
+				return true;
+			}
+			continue;
+		}
+		for ( const char* ext : textureExtensions ) {
+			fs::path full = dir / ( name + ext );
+			if ( fs::is_regular_file( full, ec ) ) {
+				out = full;
+				return true;
+			}
 		}
 	}
-	return base + ".jpg";
+	return false;
+}
+
+std::string resolveTextureName( const std::string& material, const fs::path& mapDir ) {
+	const std::string name = normalizeName( material );
+	if ( fs::path( name ).has_extension() )
+		return name;
+
+	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
+		for ( const char* ext : textureExtensions ) {
+			std::error_code ec;
+			if ( fs::is_regular_file( dir / ( name + ext ), ec ) )
+				return name + ext;
+		}
+	}
+	return name;
 }
 
 void textureSize( const std::string& material, const fs::path& mapDir, int& w, int& h ) {
@@ -90,58 +116,59 @@ void textureSize( const std::string& material, const fs::path& mapDir, int& w, i
 		h = it->second.second;
 		return;
 	}
-	std::string base = material;
-	std::replace( base.begin(), base.end(), '\\', '/' );
-	size_t slash = base.find_last_of( '/' );
-	if ( slash != std::string::npos )
-		base = base.substr( slash + 1 );
-	const char* exts[] = { ".jpg", ".png", ".jpeg", ".bmp", ".tga" };
-	bool hasExtension = base.find( '.' ) != std::string::npos;
-	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
-		for ( size_t e = 0; e < ( hasExtension ? 1 : 5 ); ++e ) {
-			std::error_code ec;
-			fs::path full = hasExtension ? ( dir / base ) : ( dir / ( base + exts[ e ] ) );
-			if ( !fs::is_regular_file( full, ec ) )
-				continue;
-			int iw = 0, ih = 0, channels = 0;
-			if ( stbi_info( full.string().c_str(), &iw, &ih, &channels ) && iw > 0 && ih > 0 ) {
-				w = iw;
-				h = ih;
-				cache[ material ] = { w, h };
-				return;
-			}
+
+	fs::path file;
+	if ( findTextureFile( material, mapDir, file ) ) {
+		int iw = 0, ih = 0, channels = 0;
+		if ( stbi_info( file.string().c_str(), &iw, &ih, &channels ) && iw > 0 && ih > 0 ) {
+			w = iw;
+			h = ih;
 		}
 	}
 	cache[ material ] = { w, h };
 }
 
-std::string resolveModelName( const std::string& model, const fs::path& mapDir ) {
-	std::string base = model;
-	std::replace( base.begin(), base.end(), '\\', '/' );
-	size_t slash = base.find_last_of( '/' );
-	if ( slash != std::string::npos )
-		base = base.substr( slash + 1 );
-	if ( base.find( '.' ) != std::string::npos )
-		return base;
+bool textureHasAlpha( const std::string& material, const fs::path& mapDir ) {
+	static std::map<std::string, bool> cache;
+	auto it = cache.find( material );
+	if ( it != cache.end() )
+		return it->second;
 
-	const std::vector<fs::path> dirs = textureDirectories( mapDir );
-	const char* exts[] = { ".b3d", ".x", ".fbx", ".3ds", ".obj" };
-	for ( const fs::path& dir : dirs ) {
+	bool transparent = false;
+	fs::path file;
+	if ( findTextureFile( material, mapDir, file ) ) {
+		int w = 0, h = 0, channels = 0;
+		if ( unsigned char* pixels = stbi_load( file.string().c_str(), &w, &h, &channels, 4 ) ) {
+			for ( int x = 0; x < 4 && !transparent; ++x ) {
+				for ( int y = 0; y < 4; ++y ) {
+					const int px = x * ( w - 1 ) / 3;
+					const int py = y * ( h - 1 ) / 3;
+					if ( pixels[ ( (size_t)py * (size_t)w + (size_t)px ) * 4 + 3 ] != 255 ) {
+						transparent = true;
+						break;
+					}
+				}
+			}
+			stbi_image_free( pixels );
+		}
+	}
+	cache[ material ] = transparent;
+	return transparent;
+}
+
+std::string resolveModelName( const std::string& model, const fs::path& mapDir ) {
+	const std::string name = normalizeName( model );
+	if ( fs::path( name ).has_extension() )
+		return name;
+
+	const char* exts[] = { ".fbx", ".x", ".b3d", ".3ds", ".obj" };
+	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
 		for ( const char* ext : exts ) {
 			std::error_code ec;
-			fs::path full = dir / ( base + ext );
+			fs::path full = dir / ( name + ext );
 			if ( fs::is_regular_file( full, ec ) )
 				return full.filename().string();
 		}
 	}
-	return base + ".b3d";
-}
-
-bool isTransparentMaterial( const std::string& material ) {
-	std::string m = lower( material );
-	const char* patterns[] = { "glass", "window", "trans", "alpha", "grate", "fence", "tree", "leaf", "wire", "screen", "water", "ladder", "rail" };
-	for ( const char* p : patterns )
-		if ( m.find( p ) != std::string::npos )
-			return true;
-	return false;
+	return name + ".x";
 }

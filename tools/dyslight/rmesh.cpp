@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <map>
+#include <utility>
 
 static void writeU8( std::ostream& os, uint8_t v ) {
 	os.write( (const char*)&v, 1 );
@@ -23,6 +25,10 @@ static void writeB3DString( std::ostream& os, const std::string& s ) {
 	os.write( s.data(), (std::streamsize)s.size() );
 }
 
+static uint32_t faceTriangleCount( const Face& face ) {
+	return face.vertices.size() >= 3 ? (uint32_t)face.vertices.size() - 2 : 0;
+}
+
 static void writeRmVertex( std::ostream& os, const Vec3& p, float diffU, float diffV, float lmU, float lmV ) {
 	writeF32( os, p.x );
 	writeF32( os, p.z );
@@ -36,67 +42,83 @@ static void writeRmVertex( std::ostream& os, const Vec3& p, float diffU, float d
 	writeU8( os, 255 );
 }
 
+static void writeRmIndices( std::ostream& os, const std::vector<const Face*>& faces ) {
+	uint32_t offset = 0;
+	for ( const Face* face : faces ) {
+		for ( uint32_t i = 1; i + 1 < (uint32_t)face->vertices.size(); ++i ) {
+			writeU32( os, offset + 0 );
+			writeU32( os, offset + i );
+			writeU32( os, offset + i + 1 );
+		}
+		offset += (uint32_t)face->vertices.size();
+	}
+}
+
+// invisible collision and trigger boxes only carry positions
 static void writeRmSimpleGeom( std::ostream& os, const std::vector<const Face*>& faces ) {
 	uint32_t vertCount = 0;
 	uint32_t triCount = 0;
-	for ( const Face* f : faces ) {
-		vertCount += (uint32_t)f->vertices.size();
-		triCount += (uint32_t)( f->vertices.size() >= 3 ? f->vertices.size() - 2 : 0 );
+	for ( const Face* face : faces ) {
+		vertCount += (uint32_t)face->vertices.size();
+		triCount += faceTriangleCount( *face );
 	}
+
 	writeU32( os, vertCount );
-	for ( const Face* f : faces ) {
-		for ( const Vec3& v : f->vertices ) {
+	for ( const Face* face : faces ) {
+		for ( const Vec3& v : face->vertices ) {
 			writeF32( os, v.x );
 			writeF32( os, v.z );
 			writeF32( os, v.y );
 		}
 	}
+
 	writeU32( os, triCount );
-	uint32_t offset = 0;
-	for ( const Face* f : faces ) {
-		for ( uint32_t i = 1; i + 1 < (uint32_t)f->vertices.size(); ++i ) {
-			writeU32( os, offset + 0 );
-			writeU32( os, offset + i );
-			writeU32( os, offset + i + 1 );
-		}
-		offset += (uint32_t)f->vertices.size();
-	}
+	writeRmIndices( os, faces );
 }
 
 bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, std::string& error ) {
-	fs::path out = base.parent_path() / ( base.filename().string() + ".rmesh" );
-	std::ofstream os( out, std::ios::binary );
-	if ( !os ) {
-		error = "could not write " + out.string();
-		return false;
-	}
+	const fs::path mapDir = base.parent_path();
+	const fs::path out = mapDir / ( base.filename().string() + ".rmesh" );
 
-	struct Group
-	{
-		std::string texture;
-		int page = 0;
-		bool transparent = false;
-		std::vector<const LmFace*> lmfaces;
-	};
-
-	std::map<std::string, Group> opaque;
-	std::map<std::string, Group> transparent;
-	std::vector<const Face*> invisible;
+	std::map<std::string, std::vector<const Face*>> transparentFaces;
+	std::vector<std::string> transparentOrder;
+	std::vector<const Face*> invisibleCollisionFaces;
+	bool hasTriggerFaces = false;
 
 	for ( const Solid& solid : map.solids ) {
 		for ( const Face& face : solid.faces ) {
 			if ( face.vertices.size() < 3 )
 				continue;
-			std::string mat = lower( face.material );
+			const std::string mat = lower( face.material );
 			if ( mat == "tooltextures/invisible_collision" ) {
-				invisible.push_back( &face );
+				invisibleCollisionFaces.push_back( &face );
 				continue;
 			}
-			if ( mat.rfind( "tooltextures/", 0 ) == 0 )
+			if ( mat.rfind( "tooltextures/", 0 ) == 0 ) {
+				if ( mat == "tooltextures/triggerbox" )
+					hasTriggerFaces = true;
 				continue;
+			}
+			if ( textureHasAlpha( face.material, mapDir ) ) {
+				if ( transparentFaces[ face.material ].empty() )
+					transparentOrder.push_back( face.material );
+				transparentFaces[ face.material ].push_back( &face );
+			}
 		}
 	}
 
+	std::vector<const Entity*> triggerBoxes;
+	for ( const Entity& ent : map.entities )
+		if ( lower( ent.classname ) == "triggerbox" && !ent.brushSolids.empty() )
+			triggerBoxes.push_back( &ent );
+
+	if ( triggerBoxes.empty() && hasTriggerFaces ) {
+		error = "map has trigger box faces but no triggerbox entities, tie the brushes to an entity";
+		return false;
+	}
+
+	std::vector<std::string> textureOrder;
+	std::map<std::string, std::vector<const LmFace*>> lmFaces;
 	for ( const LmFace& lf : baked.faces ) {
 		if ( lf.solidIndex < 0 || (size_t)lf.solidIndex >= map.solids.size() )
 			continue;
@@ -106,32 +128,66 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		const Face& face = solid.faces[ lf.faceInSolid ];
 		if ( face.vertices.size() < 3 )
 			continue;
-		std::string mat = lower( face.material );
-		if ( mat.rfind( "tooltextures/", 0 ) == 0 )
+		if ( lower( face.material ).rfind( "tooltextures/", 0 ) == 0 )
 			continue;
-		if ( isTransparentMaterial( face.material ) ) {
-			Group& g = transparent[ face.material ];
-			g.texture = face.material;
-			g.transparent = true;
-			g.lmfaces.push_back( &lf );
-		} else {
-			std::string key = face.material + "\n" + std::to_string( lf.page );
-			Group& g = opaque[ key ];
-			g.texture = face.material;
-			g.page = lf.page;
-			g.lmfaces.push_back( &lf );
+		if ( textureHasAlpha( face.material, mapDir ) )
+			continue;
+		auto& list = lmFaces[ face.material ];
+		if ( list.empty() )
+			textureOrder.push_back( face.material );
+		list.push_back( &lf );
+	}
+	for ( const std::string& tex : transparentOrder )
+		if ( lmFaces.find( tex ) == lmFaces.end() )
+			textureOrder.push_back( tex );
+
+	struct Batch
+	{
+		std::string texture;
+		int page = 0;
+		bool lightmapped = true;
+		std::vector<std::pair<const Face*, const LmFace*>> faces; // LmFace is null for transparent batches
+	};
+
+	const int pageCount = std::max<int>( 1, (int)baked.pages.size() );
+	std::vector<Batch> batches;
+	for ( const std::string& tex : textureOrder ) {
+		auto lmIt = lmFaces.find( tex );
+		auto trIt = transparentFaces.find( tex );
+		const std::vector<const LmFace*>* lmList = lmIt != lmFaces.end() ? &lmIt->second : nullptr;
+		const std::vector<const Face*>* trList = trIt != transparentFaces.end() ? &trIt->second : nullptr;
+
+		for ( int page = 0; page < pageCount; ++page ) {
+			Batch batch;
+			batch.texture = tex;
+			batch.page = page;
+			if ( lmList ) {
+				for ( const LmFace* lf : *lmList ) {
+					if ( lf->page != page )
+						continue;
+					const Face& face = map.solids[ lf->solidIndex ].faces[ lf->faceInSolid ];
+					batch.faces.push_back( { &face, lf } );
+				}
+			}
+			if ( !batch.faces.empty() ) {
+				batch.lightmapped = true;
+				batches.push_back( std::move( batch ) );
+			} else if ( page == 0 && trList && !trList->empty() ) {
+				batch.lightmapped = false;
+				for ( const Face* face : *trList )
+					batch.faces.push_back( { face, nullptr } );
+				batches.push_back( std::move( batch ) );
+			}
 		}
 	}
 
-	std::vector<Group*> groups;
-	for ( auto& kv : opaque )
-		groups.push_back( &kv.second );
-	for ( auto& kv : transparent )
-		groups.push_back( &kv.second );
+	std::ofstream os( out, std::ios::binary );
+	if ( !os ) {
+		error = "could not write " + out.string();
+		return false;
+	}
 
-	writeB3DString( os, "RM" );
-	writeU8( os, 1 );
-	writeU32( os, (uint32_t)groups.size() );
+	writeB3DString( os, triggerBoxes.empty() ? "RoomMesh" : "RoomMesh.HasTriggerBox" );
 
 	auto pageName = [ & ]( int page ) {
 		std::string name = base.filename().string() + "_lm";
@@ -140,108 +196,111 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		return name + ".png";
 	};
 
-	for ( const Group* g : groups ) {
-		std::string texName = resolveTextureName( g->texture, base.parent_path() );
+	writeU32( os, (uint32_t)batches.size() );
 
-		if ( g->transparent ) {
-			writeU8( os, 0 );
-			writeU8( os, 3 );
-			writeB3DString( os, texName );
-		} else {
-			writeU8( os, 1 );
-			writeB3DString( os, pageName( g->page ) );
-			writeU8( os, 1 );
-			writeB3DString( os, texName );
-		}
+	for ( const Batch& batch : batches ) {
+		const std::string texName = resolveTextureName( batch.texture, mapDir );
+		int tw = 256, th = 256;
+		textureSize( batch.texture, mapDir, tw, th );
+		const float invW = 1.0f / (float)std::max( 1, tw );
+		const float invH = 1.0f / (float)std::max( 1, th );
 
 		uint32_t vertCount = 0;
 		uint32_t triCount = 0;
-		for ( const LmFace* lf : g->lmfaces ) {
-			const Face& face = map.solids[ lf->solidIndex ].faces[ lf->faceInSolid ];
-			vertCount += (uint32_t)face.vertices.size();
-			triCount += (uint32_t)( face.vertices.size() - 2 );
+		for ( const auto& [ face, lf ] : batch.faces ) {
+			vertCount += (uint32_t)face->vertices.size();
+			triCount += faceTriangleCount( *face );
 		}
-
 		if ( vertCount > 65535 ) {
-			error = "RMesh vertex overflow in " + g->texture;
+			error = "RMesh vertex overflow in " + batch.texture;
 			return false;
 		}
 
-		writeU32( os, vertCount );
+		if ( batch.lightmapped ) {
+			writeU8( os, 1 );
+			writeB3DString( os, pageName( batch.page ) );
+			writeU8( os, 1 );
+			writeB3DString( os, texName );
+			writeU32( os, vertCount );
 
-		for ( const LmFace* lf : g->lmfaces ) {
-			const Face& face = map.solids[ lf->solidIndex ].faces[ lf->faceInSolid ];
-			int tw = 256, th = 256;
-			textureSize( g->texture, base.parent_path(), tw, th );
-			float us = std::max( 0.0001f, std::abs( face.uScale ) );
-			float vs = std::max( 0.0001f, std::abs( face.vScale ) );
-			Vec3 ref = face.vertices[ 0 ];
-			for ( const Vec3& v : face.vertices ) {
-				float diffU = v.dot( face.uaxis ) / ( (float)tw * us ) + face.uShift / (float)tw;
-				float diffV = v.dot( face.vaxis ) / ( (float)th * vs ) + face.vShift / (float)th;
-				float lmU = 0.0f;
-				float lmV = 0.0f;
-				if ( !g->transparent ) {
-					float localU = ( v - ref ).dot( face.uaxis );
-					float localV = ( v - ref ).dot( face.vaxis );
-					lmU = ( (float)lf->x + ( localU - lf->minU ) / std::max( 0.0001f, lf->stepU ) ) /
-						  (float)baked.atlasSize;
-					lmV = ( (float)lf->y + ( localV - lf->minV ) / std::max( 0.0001f, lf->stepV ) ) /
-						  (float)baked.atlasSize;
+			for ( const auto& [ face, lf ] : batch.faces ) {
+				const Vec3 ref = face->vertices[ 0 ];
+				const float us = std::max( 0.0001f, std::abs( face->uScale ) );
+				const float vs = std::max( 0.0001f, std::abs( face->vScale ) );
+				for ( const Vec3& v : face->vertices ) {
+					const float diffU = v.dot( face->uaxis ) / ( (float)tw * us ) + face->uShift * invW;
+					const float diffV = v.dot( face->vaxis ) / ( (float)th * vs ) + face->vShift * invH;
+					const float localU = ( v - ref ).dot( face->uaxis );
+					const float localV = ( v - ref ).dot( face->vaxis );
+					const float lmU = ( (float)lf->x + ( localU - lf->minU ) / std::max( 0.0001f, lf->stepU ) ) /
+					                  (float)std::max( 1, baked.atlasSize );
+					const float lmV = ( (float)lf->y + ( localV - lf->minV ) / std::max( 0.0001f, lf->stepV ) ) /
+					                  (float)std::max( 1, baked.atlasSize );
+					writeRmVertex( os, v, diffU, diffV, lmU, lmV );
 				}
-				writeRmVertex( os, v, diffU, diffV, lmU, lmV );
+			}
+		} else {
+			writeU8( os, 0 );
+			writeU8( os, 3 ); // COLOR / ALPHA
+			writeB3DString( os, texName );
+			writeU32( os, vertCount );
+
+			for ( const auto& [ face, lf ] : batch.faces ) {
+				const float us = std::max( 0.0001f, std::abs( face->uScale ) );
+				const float vs = std::max( 0.0001f, std::abs( face->vScale ) );
+				for ( const Vec3& v : face->vertices ) {
+					const float diffU = v.dot( face->uaxis ) / ( (float)tw * us ) + face->uShift * invW;
+					const float diffV = v.dot( face->vaxis ) / ( (float)th * vs ) + face->vShift * invH;
+					writeRmVertex( os, v, diffU, diffV, 0.0f, 0.0f );
+				}
 			}
 		}
+
 		writeU32( os, triCount );
 		uint32_t offset = 0;
-		for ( const LmFace* lf : g->lmfaces ) {
-			const Face& face = map.solids[ lf->solidIndex ].faces[ lf->faceInSolid ];
-			for ( uint32_t i = 1; i + 1 < (uint32_t)face.vertices.size(); ++i ) {
+		for ( const auto& [ face, lf ] : batch.faces ) {
+			for ( uint32_t i = 1; i + 1 < (uint32_t)face->vertices.size(); ++i ) {
 				writeU32( os, offset + 0 );
 				writeU32( os, offset + i );
 				writeU32( os, offset + i + 1 );
 			}
-			offset += (uint32_t)face.vertices.size();
+			offset += (uint32_t)face->vertices.size();
 		}
 	}
 
-	writeU32( os, 0 );
-
-	if ( !invisible.empty() ) {
+	if ( !invisibleCollisionFaces.empty() ) {
 		writeU32( os, 1 );
-		writeRmSimpleGeom( os, invisible );
+		writeRmSimpleGeom( os, invisibleCollisionFaces );
 	} else {
 		writeU32( os, 0 );
 	}
 
-	std::vector<const Entity*> triggers;
-	for ( const Entity& ent : map.entities )
-		if ( lower( ent.classname ) == "triggerbox" && !ent.brushSolids.empty() )
-			triggers.push_back( &ent );
-
-	writeU32( os, (uint32_t)triggers.size() );
-	for ( const Entity* ent : triggers ) {
-		writeU32( os, 1 );
-		std::vector<const Face*> faces;
-		for ( const Solid& solid : ent->brushSolids )
-			for ( const Face& face : solid.faces )
-				faces.push_back( &face );
-		writeRmSimpleGeom( os, faces );
-		auto it = ent->keys.find( "name" );
-		writeB3DString( os, it != ent->keys.end() ? it->second : "triggerbox" );
+	if ( !triggerBoxes.empty() ) {
+		writeU32( os, (uint32_t)triggerBoxes.size() );
+		for ( const Entity* ent : triggerBoxes ) {
+			std::vector<const Face*> faces;
+			for ( const Solid& solid : ent->brushSolids )
+				for ( const Face& face : solid.faces )
+					if ( face.vertices.size() >= 3 )
+						faces.push_back( &face );
+			writeU32( os, 1 );
+			writeRmSimpleGeom( os, faces );
+			auto it = ent->keys.find( "name" );
+			writeB3DString( os, it != ent->keys.end() ? it->second : "triggerbox" );
+		}
 	}
 
 	std::vector<Light> lights;
-
 	for ( const Light& light : collectLights( map ) )
 		if ( light.exportSprite )
 			lights.push_back( light );
+
 	std::vector<const Entity*> waypoints;
 	std::vector<const Entity*> soundEmitters;
 	std::vector<const Entity*> props;
 	std::vector<const Entity*> screens;
 	for ( const Entity& ent : map.entities ) {
-		std::string cls = lower( ent.classname );
+		const std::string cls = lower( ent.classname );
 		if ( cls == "waypoint" )
 			waypoints.push_back( &ent );
 		else if ( cls == "soundemitter" )
@@ -260,10 +319,10 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		writeF32( os, light.origin.z );
 		writeF32( os, light.origin.y );
 		writeF32( os, light.range );
-		int r = std::clamp( (int)( light.color.x * 255.0f + 0.5f ), 0, 255 );
-		int g = std::clamp( (int)( light.color.y * 255.0f + 0.5f ), 0, 255 );
-		int b = std::clamp( (int)( light.color.z * 255.0f + 0.5f ), 0, 255 );
-		std::string color = std::to_string( r ) + " " + std::to_string( g ) + " " + std::to_string( b );
+		const int r = std::clamp( (int)( light.color.x * 255.0f + 0.5f ), 0, 255 );
+		const int g = std::clamp( (int)( light.color.y * 255.0f + 0.5f ), 0, 255 );
+		const int b = std::clamp( (int)( light.color.z * 255.0f + 0.5f ), 0, 255 );
+		const std::string color = std::to_string( r ) + " " + std::to_string( g ) + " " + std::to_string( b );
 		writeU32( os, (uint32_t)color.size() );
 		os.write( color.data(), (std::streamsize)color.size() );
 		writeF32( os, light.intensity );
@@ -290,14 +349,13 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 	for ( const Entity* ent : props ) {
 		writeB3DString( os, "model" );
 		auto fi = ent->keys.find( "file" );
-		std::string file = fi != ent->keys.end() ? fi->second : "unknown";
-		file = resolveModelName( file, base.parent_path() );
+		const std::string file = resolveModelName( fi != ent->keys.end() ? fi->second : "unknown", mapDir );
 		writeB3DString( os, file );
 		writeF32( os, ent->origin.x );
 		writeF32( os, ent->origin.z );
 		writeF32( os, ent->origin.y );
-		Vec3 angles = parseVec3( ent->keys.count( "angles" ) ? ent->keys.at( "angles" ) : "0 0 0" );
-		Vec3 scale = parseVec3( ent->keys.count( "scale" ) ? ent->keys.at( "scale" ) : "1 1 1", { 1, 1, 1 } );
+		const Vec3 angles = parseVec3( ent->keys.count( "angles" ) ? ent->keys.at( "angles" ) : "0 0 0" );
+		const Vec3 scale = parseVec3( ent->keys.count( "scale" ) ? ent->keys.at( "scale" ) : "1 1 1", { 1, 1, 1 } );
 		writeF32( os, angles.x );
 		writeF32( os, angles.y );
 		writeF32( os, angles.z );
