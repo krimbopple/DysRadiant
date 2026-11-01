@@ -41,6 +41,7 @@
 #include <map>
 #include <list>
 #include <format>
+#include <string_view>
 
 #include "ifilesystem.h"
 #include "ishaders.h"
@@ -75,6 +76,7 @@ const char* g_shadersDirectory = "";
 bool g_enableDefaultShaders = true;
 ShaderLanguage g_shaderLanguage = SHADERLANGUAGE_QUAKE3;
 bool g_useShaderList = true;
+bool g_loadAllDefaultShaders = false;
 _QERPlugImageTable* g_bitmapModule = 0;
 const char* g_texturePrefix = "";
 
@@ -1847,6 +1849,16 @@ bool shaderlist_findOrInstall( const char* enginePath, const char* toolsPath, co
 	return false;
 }
 
+class LoadAllDefaultShaders
+{
+public:
+	void operator()( const char* name ) const {
+		const auto texture = StringStream<256>( PathExtensionless( name ) );
+		IShader* shader = GetShaderSystem().getShaderForName( texture.c_str() );
+		shader->DecRef();
+	}
+};
+
 void Shaders_Load(){
 	if ( g_shaderLanguage == SHADERLANGUAGE_QUAKE4 ) {
 		GlobalFileSystem().forEachFile( "guides/", "guide", makeCallbackF( loadGuideFile ), 0 );
@@ -1888,6 +1900,22 @@ void Shaders_Load(){
 		for( const CopiedString& sh : l_shaderfiles )
 		{
 			LoadShaderFile( shadername( path, sh ) );
+		}
+	}
+
+	if ( g_loadAllDefaultShaders ) {
+		const char* textureTypes = GlobalRadiant().getGameDescriptionKeyValue( "texturetypes" );
+		std::string_view remaining( textureTypes != nullptr ? textureTypes : "" );
+		while ( !remaining.empty() ) {
+			const std::size_t separator = remaining.find_first_of( " \t" );
+			const std::string_view extension = remaining.substr( 0, separator );
+			if ( !extension.empty() ) {
+				GlobalFileSystem().forEachFile( "", std::string( extension ).c_str(), makeCallback( LoadAllDefaultShaders() ), 99 );
+			}
+			if ( separator == std::string_view::npos ) {
+				break;
+			}
+			remaining.remove_prefix( separator + 1 );
 		}
 	}
 

@@ -49,5 +49,6 @@ extern const char* g_texturePrefix;
 extern ShaderLanguage g_shaderLanguage;
 extern bool g_enableDefaultShaders;
 extern bool g_useShaderList;
+extern bool g_loadAllDefaultShaders;
 struct _QERPlugImageTable;
 extern _QERPlugImageTable* g_bitmapModule;

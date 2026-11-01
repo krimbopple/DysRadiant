@@ -94,6 +94,7 @@ public:
 		g_enableDefaultShaders = true;
 		g_shaderLanguage = SHADERLANGUAGE_QUAKE3;
 		g_useShaderList = false;
+		g_loadAllDefaultShaders = true;
 		g_bitmapModule = dependencies.getBitmapModule().getTable();
 		Shaders_Construct();
 		m_shaderscbre = &GetShaderSystem();

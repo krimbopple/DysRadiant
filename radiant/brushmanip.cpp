@@ -1176,6 +1176,8 @@ filter_brush_all_faces g_filter_brush_lightgrid( &g_filter_face_lightgrid );
 filter_face_flags g_filter_face_translucent( QER_TRANS | QER_ALPHATEST );
 filter_brush_any_face g_filter_brush_translucent( &g_filter_face_translucent );
 
+filter_face_shader_prefix g_filter_face_tooltextures( "tooltextures/" );
+
 filter_face_contents g_filter_face_detail( BRUSH_DETAIL_MASK );
 filter_brush_all_faces g_filter_brush_detail( &g_filter_face_detail );
 
@@ -1208,6 +1210,7 @@ void BrushFilters_construct(){
 	add_brush_filter( g_filter_brush_visportal, EXCLUDE_VISPORTALS );
 	add_brush_filter( g_filter_brush_areaportal, EXCLUDE_AREAPORTALS );
 	add_brush_filter( g_filter_brush_translucent, EXCLUDE_TRANSLUCENT );
+	add_face_filter( g_filter_face_tooltextures, EXCLUDE_TRANSLUCENT );
 	if( !string_equal( GlobalRadiant().getRequiredGameDescriptionKeyValue( "brushtypes" ), "quake" ) ){ /* conditional for entity based structural/detail filters; see entity plugin */
 		add_brush_filter( g_filter_brush_detail, EXCLUDE_DETAILS );
 		add_brush_filter( g_filter_brush_detail, EXCLUDE_STRUCTURAL, true );
