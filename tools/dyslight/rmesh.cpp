@@ -42,14 +42,26 @@ static void writeRmVertex( std::ostream& os, const Vec3& p, float diffU, float d
 	writeU8( os, 255 );
 }
 
+static bool faceNeedsReversedWinding( const Face& face ) {
+	if ( face.vertices.size() < 3 )
+		return false;
+	const Vec3 n = ( face.vertices[ 1 ] - face.vertices[ 0 ] ).cross( face.vertices[ 2 ] - face.vertices[ 0 ] );
+	return n.dot( face.normal ) > 0.0f;
+}
+
+static void writeFaceIndices( std::ostream& os, const Face& face, uint32_t offset ) {
+	const bool reverse = faceNeedsReversedWinding( face );
+	for ( uint32_t i = 1; i + 1 < (uint32_t)face.vertices.size(); ++i ) {
+		writeU32( os, offset + 0 );
+		writeU32( os, offset + ( reverse ? i + 1 : i ) );
+		writeU32( os, offset + ( reverse ? i : i + 1 ) );
+	}
+}
+
 static void writeRmIndices( std::ostream& os, const std::vector<const Face*>& faces ) {
 	uint32_t offset = 0;
 	for ( const Face* face : faces ) {
-		for ( uint32_t i = 1; i + 1 < (uint32_t)face->vertices.size(); ++i ) {
-			writeU32( os, offset + 0 );
-			writeU32( os, offset + i );
-			writeU32( os, offset + i + 1 );
-		}
+		writeFaceIndices( os, *face, offset );
 		offset += (uint32_t)face->vertices.size();
 	}
 }
@@ -217,9 +229,9 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		}
 
 		if ( batch.lightmapped ) {
-			writeU8( os, 1 );
+			writeU8( os, 2 ); // TextureType.lightmap
 			writeB3DString( os, pageName( batch.page ) );
-			writeU8( os, 1 );
+			writeU8( os, 1 ); // TextureType.opaque
 			writeB3DString( os, texName );
 			writeU32( os, vertCount );
 
@@ -259,11 +271,7 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		writeU32( os, triCount );
 		uint32_t offset = 0;
 		for ( const auto& [ face, lf ] : batch.faces ) {
-			for ( uint32_t i = 1; i + 1 < (uint32_t)face->vertices.size(); ++i ) {
-				writeU32( os, offset + 0 );
-				writeU32( os, offset + i );
-				writeU32( os, offset + i + 1 );
-			}
+			writeFaceIndices( os, *face, offset );
 			offset += (uint32_t)face->vertices.size();
 		}
 	}
@@ -370,8 +378,11 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 		writeF32( os, ent->origin.z );
 		writeF32( os, ent->origin.y );
 		auto ii = ent->keys.find( "imgpath" );
-		writeB3DString( os, ii != ent->keys.end() ? ii->second : "" );
+		writeB3DString( os, ii != ent->keys.end() ? fs::path( ii->second ).filename().string() : "" );
 	}
+
+	// the game validates this trailer for plain RoomMesh files
+	writeB3DString( os, "EOF" );
 
 	return true;
 }

@@ -93,17 +93,14 @@ static bool findTextureFile( const std::string& material, const fs::path& mapDir
 
 std::string resolveTextureName( const std::string& material, const fs::path& mapDir ) {
 	const std::string name = normalizeName( material );
-	if ( fs::path( name ).has_extension() )
-		return name;
+	const std::string base = fs::path( name ).filename().string();
+	if ( fs::path( base ).has_extension() )
+		return base;
 
-	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
-		for ( const char* ext : textureExtensions ) {
-			std::error_code ec;
-			if ( fs::is_regular_file( dir / ( name + ext ), ec ) )
-				return name + ext;
-		}
-	}
-	return name;
+	fs::path file;
+	if ( findTextureFile( name, mapDir, file ) )
+		return file.filename().string();
+	return base;
 }
 
 void textureSize( const std::string& material, const fs::path& mapDir, int& w, int& h ) {
@@ -158,8 +155,9 @@ bool textureHasAlpha( const std::string& material, const fs::path& mapDir ) {
 
 std::string resolveModelName( const std::string& model, const fs::path& mapDir ) {
 	const std::string name = normalizeName( model );
-	if ( fs::path( name ).has_extension() )
-		return name;
+	const std::string base = fs::path( name ).filename().string();
+	if ( fs::path( base ).has_extension() )
+		return base;
 
 	const char* exts[] = { ".fbx", ".x", ".b3d", ".3ds", ".obj" };
 	for ( const fs::path& dir : textureDirectories( mapDir ) ) {
@@ -170,5 +168,5 @@ std::string resolveModelName( const std::string& model, const fs::path& mapDir )
 				return full.filename().string();
 		}
 	}
-	return name + ".x";
+	return base + ".x";
 }
