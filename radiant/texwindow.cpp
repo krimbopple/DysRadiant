@@ -54,6 +54,7 @@
 #include <QOpenGLWidget>
 #include <QTabWidget>
 #include <QClipboard>
+#include <QTimer>
 
 #include "signal/signal.h"
 #include "math/vector.h"
@@ -120,6 +121,17 @@ void TextureGroups_addWad( TextureGroups& groups, const char* archive ){
 typedef ReferenceCaller<TextureGroups, void(const char*), TextureGroups_addWad> TextureGroupsAddWadCaller;
 
 void TextureGroups_addShader( TextureGroups& groups, const char* shaderName ){
+	const char* folder = GlobalShaderSystem().getShaderFolder( shaderName );
+	if ( !string_empty( folder ) ) {
+		for ( const auto& dir : g_ShaderExclusionDirs ) {
+			if ( string_equal_prefix_nocase( folder, dir.c_str() ) ) {
+				return;
+			}
+		}
+		groups.insert( CopiedString( folder ) );
+		return;
+	}
+
 	const char* texture = path_make_relative( shaderName, GlobalTexturePrefix_get() );
 	if ( texture != shaderName ) {
 		for ( const auto& dir : g_ShaderExclusionDirs ) {
@@ -504,7 +516,13 @@ bool Texture_IsShown( IShader* shader, const TextureBrowser& textureBrowser ){
 		return textureBrowser.m_found_shaders.contains( shader->getName() );
 	}
 	else {
-		if ( !shader_equal_prefix( shader_get_textureName( shader->getName() ), g_TextureBrowser_currentDirectory.c_str() ) ) {
+		const char* folder = GlobalShaderSystem().getShaderFolder( shader->getName() );
+		std::string directory( g_TextureBrowser_currentDirectory.c_str() );
+		while ( !directory.empty() && directory.back() == '/' ) {
+			directory.pop_back();
+		}
+		const char* relative = !string_empty( folder ) ? folder : shader_get_textureName( shader->getName() );
+		if ( !shader_equal_prefix( relative, directory.c_str() ) ) {
 			return false;
 		}
 	}
@@ -622,6 +640,7 @@ inline bool texture_name_ignore( const char* name ){
 	    string_equal_suffix( temp, "_shirt" ) ||
 	    string_equal_suffix( temp, "_reflect" ) ||
 	    string_equal_suffix( temp, "_alpha" ) ||
+	    string_in_string_nocase( temp, "_lm" ) != nullptr ||
 	    0;
 }
 
@@ -677,8 +696,13 @@ public:
 		m_count = 0;
 	}
 	void operator()( const char* name ) const {
-		if ( shader_equal_prefix( name, GlobalTexturePrefix_get() )
-		  && shader_equal_prefix( name + string_length( GlobalTexturePrefix_get() ), m_directory ) ) {
+		const char* folder = GlobalShaderSystem().getShaderFolder( name );
+		std::string directory( m_directory );
+		while ( !directory.empty() && directory.back() == '/' ) {
+			directory.pop_back();
+		}
+		const char* relative = !string_empty( folder ) ? folder : name + string_length( GlobalTexturePrefix_get() );
+		if ( shader_equal_prefix( relative, directory.c_str() ) ) {
 			++m_count;
 			// request the shader, this will load the texture if needed
 			// this Shader_ForName call is a kind of hack
@@ -746,7 +770,7 @@ void TextureBrowser_ShowDirectory( const char* directory ){
 		GlobalShaderSystem().foreachShaderName( makeCallback( TextureCategoryLoadShader( directory, shaders_count ) ) );
 		globalOutputStream() << "Showing " << shaders_count << " shaders.\n";
 
-		if ( g_pGameDescription->mGameType != "doom3" ) {
+		if ( g_pGameDescription->mGameType != "doom3" && !GlobalShaderSystem().isShaderFolder( directory ) ) {
 			// load remaining texture files
 			Radiant_getImageModules().foreachModule( LoadTexturesByTypeVisitor( StringStream<64>( GlobalTexturePrefix_get(), directory ) ) );
 		}
@@ -1208,6 +1232,20 @@ void TextureBrowser_constructTreeStore(){
 		TextureGroups_constructTreeModel_childless( groups, model );
 
 	g_TexBro.m_treeView->setModel( model );
+}
+
+void TextureBrowser_refreshTree(){
+	TextureBrowser_constructTreeStore();
+	g_TexBro.m_treeView->doItemsLayout();
+	g_TexBro.m_treeView->viewport()->update();
+	g_TexBro.queueDraw();
+
+	QTimer::singleShot( 0, [](){
+		TextureBrowser_constructTreeStore();
+		g_TexBro.m_treeView->doItemsLayout();
+		g_TexBro.m_treeView->viewport()->update();
+		g_TexBro.queueDraw();
+	} );
 }
 
 void TreeView_onRowActivated( const QModelIndex& index ){

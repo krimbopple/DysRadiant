@@ -70,6 +70,7 @@
 #include "brushmodule.h"
 #include "brush.h"
 #include "grid.h"
+#include "texwindow.h"
 
 class NameObserver
 {
@@ -1104,6 +1105,8 @@ void Map_LoadFile( const char *filename ){
 	g_currentMap = &g_map;
 
 	GridStatus_changed();
+
+	TextureBrowser_refreshTree();
 }
 
 class Excluder

@@ -165,6 +165,9 @@ public:
 	virtual void setLightingEnabled( bool enabled ) = 0;
 
 	virtual const char* getTexturePrefix() const = 0;
+
+	virtual const char* getShaderFolder( const char* name ) const = 0;
+	virtual bool isShaderFolder( const char* folder ) const = 0;
 };
 
 #include "modulesystem.h"

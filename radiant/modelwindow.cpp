@@ -1234,6 +1234,13 @@ void ModelBrowser_constructTree(){
 	ModelPaths_ArchiveVisitor visitor( typelist.m_modelExtensions, g_ModelBrowser.m_modelFS, modelFolders.m_modelFoldersMap );
 	GlobalFileSystem().forEachArchive( ModelPaths_addFromArchiveCaller( visitor ), false, false );
 
+	if ( g_ModelBrowser.m_modelFS.m_files.empty() && g_ModelBrowser.m_modelFS.m_folders.empty() ) {
+		ModelFoldersMap rootFolders;
+		rootFolders.emplace( "", 99 );
+		ModelPaths_ArchiveVisitor rootVisitor( typelist.m_modelExtensions, g_ModelBrowser.m_modelFS, rootFolders );
+		GlobalFileSystem().forEachArchive( ModelPaths_addFromArchiveCaller( rootVisitor ), false, false );
+	}
+
 //%	modelFS_traverse( g_ModelBrowser.m_modelFS );
 
 

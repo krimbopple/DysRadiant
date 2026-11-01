@@ -36,6 +36,7 @@
 
 #include "shaders.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -1202,6 +1203,9 @@ typedef std::map<CopiedString, ShaderPointer, shader_less_t> shaders_t;
 
 shaders_t g_ActiveShaders;
 
+typedef std::map<CopiedString, CopiedString, shader_less_t> shaderFolders_t;
+shaderFolders_t g_shaderFolders;
+
 static shaders_t::iterator g_ActiveShadersIterator;
 
 void ActiveShaders_IteratorBegin(){
@@ -1849,13 +1853,84 @@ bool shaderlist_findOrInstall( const char* enginePath, const char* toolsPath, co
 	return false;
 }
 
-class LoadAllDefaultShaders
+static std::string trim_trailing_separators( std::string path ){
+	while ( !path.empty() && ( path.back() == '/' || path.back() == '\\' || path.back() == '.' ) ) {
+		path.pop_back();
+	}
+	return path;
+}
+
+static CopiedString shaderFolderFor( const char* archiveName, const char* relativeName ){
+	std::string relativeFolder;
+	const char* last = path_remove_directory( relativeName );
+	if ( !string_empty( last ) ) {
+		relativeFolder = std::string( relativeName, last - 1 );
+	}
+
+	const char* gfx = string_in_string_nocase( archiveName, "gfx/" );
+	if ( gfx != nullptr ) {
+		const std::string base = trim_trailing_separators( gfx );
+		if ( !relativeFolder.empty() ) {
+			return CopiedString( StringStream( base.c_str(), "/", relativeFolder.c_str() ) );
+		}
+		return CopiedString( base.c_str() );
+	}
+
+	if ( !relativeFolder.empty() ) {
+		return CopiedString( relativeFolder.c_str() );
+	}
+
+	std::string base( archiveName );
+	base = trim_trailing_separators( base );
+	const std::size_t separator = base.find_last_of( "/\\" );
+	return CopiedString( ( separator == std::string::npos ? base : base.substr( separator + 1 ) ).c_str() );
+}
+
+class LoadAllDefaultShaders : public Archive::Visitor
 {
+	const char* m_extension;
+	const char* m_archiveName;
 public:
-	void operator()( const char* name ) const {
+	LoadAllDefaultShaders( const char* extension, const char* archiveName ) : m_extension( extension ), m_archiveName( archiveName ){
+	}
+	void visit( const char* name ) override {
+		if ( !path_extension_is( name, m_extension ) ) {
+			return;
+		}
 		const auto texture = StringStream<256>( PathExtensionless( name ) );
+		if ( string_in_string_nocase( texture.c_str(), "_lm" ) != nullptr ) {
+			return;
+		}
+		const CopiedString folder = shaderFolderFor( m_archiveName, name );
+		if ( !folder.empty() ) {
+			g_shaderFolders.insert( shaderFolders_t::value_type( CopiedString( texture.c_str() ), folder ) );
+		}
 		IShader* shader = GetShaderSystem().getShaderForName( texture.c_str() );
 		shader->DecRef();
+	}
+};
+
+class LoadAllDefaultShadersFromArchive
+{
+	const char* m_extension;
+public:
+	LoadAllDefaultShadersFromArchive( const char* extension ) : m_extension( extension ){
+	}
+	void operator()( const char* archiveName ) const {
+		const char* enginePath = GlobalRadiant().getEnginePath();
+		const std::size_t engineLength = string_length( enginePath );
+		if ( engineLength != 0 && path_equal_n( archiveName, enginePath, engineLength ) ) {
+			const char* remainder = archiveName + engineLength;
+			if ( string_empty( remainder ) || string_equal( remainder, "." ) || string_equal( remainder, "./" ) ) {
+				return;
+			}
+		}
+
+		Archive* archive = GlobalFileSystem().getArchive( archiveName, false );
+		if ( archive != nullptr ) {
+			LoadAllDefaultShaders visitor( m_extension, archiveName );
+			archive->forEachFile( Archive::VisitorFunc( visitor, Archive::eFiles, 99 ), "" );
+		}
 	}
 };
 
@@ -1908,9 +1983,9 @@ void Shaders_Load(){
 		std::string_view remaining( textureTypes != nullptr ? textureTypes : "" );
 		while ( !remaining.empty() ) {
 			const std::size_t separator = remaining.find_first_of( " \t" );
-			const std::string_view extension = remaining.substr( 0, separator );
+			const std::string extension( remaining.substr( 0, separator ) );
 			if ( !extension.empty() ) {
-				GlobalFileSystem().forEachFile( "", std::string( extension ).c_str(), makeCallback( LoadAllDefaultShaders() ), 99 );
+				GlobalFileSystem().forEachArchive( makeCallback( LoadAllDefaultShadersFromArchive( extension.c_str() ) ), false );
 			}
 			if ( separator == std::string_view::npos ) {
 				break;
@@ -2015,6 +2090,18 @@ public:
 
 	const char* getTexturePrefix() const override {
 		return g_texturePrefix;
+	}
+
+	const char* getShaderFolder( const char* name ) const override {
+		const auto i = g_shaderFolders.find( name );
+		return i != g_shaderFolders.end() ? i->second.c_str() : "";
+	}
+
+	bool isShaderFolder( const char* folder ) const override {
+		const std::string wanted = trim_trailing_separators( folder );
+		return std::ranges::any_of( g_shaderFolders, [&wanted]( const auto& entry ){
+			return string_equal_nocase( entry.second.c_str(), wanted.c_str() );
+		} );
 	}
 };
 
