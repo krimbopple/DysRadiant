@@ -1,0 +1,166 @@
+@BaseClass = Targetname
+[
+	targetname(target_source) : "Name" : : "The name that other entities refer to this entity by."
+]
+
+@BaseClass = Angles
+[
+	angles(angle) : "Pitch Yaw Roll (Y Z X)" : "0 0 0"
+]
+
+@BaseClass = Origin
+[
+	origin(origin) : "Origin (X Y Z)" : : "The position of this entity in the world."
+]
+
+@BaseClass = CBREEntity
+[
+	file(string) : "Model" : : "Model file (.b3d or .x)."
+	texture(string) : "Texture"
+	scale(vector) : "Scale" : "1 1 1"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = light : "Point light"
+[
+	color(color255) : "Color" : "255 255 255"
+	range(float) : "Range" : "256"
+	intensity(float) : "Intensity" : "1"
+	has_sprite(integer) : "Sprite" : 0
+	sprite_scale(float) : "Sprite scale" : "1"
+	casts_shadows(integer) : "Cast shadows" : 1
+	scattering(float) : "Scattering" : "0"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = spotlight : "Spotlight"
+[
+	color(color255) : "Color" : "255 255 255"
+	range(float) : "Range" : "256"
+	intensity(float) : "Intensity" : "1"
+	inner_cone_angle(integer) : "Inner cone angle" : 30
+	outer_cone_angle(integer) : "Outer cone angle" : 60
+	has_sprite(integer) : "Sprite" : 0
+	sprite_scale(float) : "Sprite scale" : "1"
+	casts_shadows(integer) : "Cast shadows" : 1
+	scattering(float) : "Scattering" : "0"
+]
+
+@PointClass base(Targetname) size(-8 -8 -8, 8 8 8) = waypoint : "Waypoint" []
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = playerstart : "Player start" []
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = soundemitter : "Sound emitter"
+[
+	id(integer) : "Sound id" : 0
+	range(float) : "Range" : "256"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = screen : "Screen"
+[
+	texture(string) : "Texture"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = save_screen : "Save screen"
+[
+	texture(string) : "Texture"
+	file(string) : "Model"
+]
+
+@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": ":file" }) size(-16 -16 -16, 16 16 16) = model : "Model" []
+@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": ":file" }) size(-16 -16 -16, 16 16 16) = model_nocoll : "Model (no collision)" []
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = mesh : "Mesh"
+[
+	file(string) : "Model"
+	texture(string) : "Texture"
+	has_collision(integer) : "Collision" : 1
+	fx(integer) : "Effect" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = item : "Item"
+[
+	item_name(string) : "Item"
+	file(string) : "Model"
+	use_custom_rotation(integer) : "Custom rotation" : 0
+	state_1(float) : "State 1" : "0"
+	state_2(float) : "State 2" : "0"
+	spawn_chance(float) : "Spawn chance" : "1"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = door : "Door"
+[
+	door_type(integer) : "Door type" : 0
+	key_card_level(integer) : "Key card level" : 0
+	keypad_code(string) : "Keypad code"
+	angle(float) : "Angle" : "0"
+	start_open(integer) : "Start open" : 0
+	locked(integer) : "Locked" : 0
+	delete_half(integer) : "Delete half" : 0
+	allow_scp_079_remote_control(integer) : "Allow SCP-079 remote control" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = fusebox : "Fusebox"
+[
+	file(string) : "Model"
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = generator : "Generator"
+[
+	file(string) : "Model"
+	sfx(integer) : "Sound id" : 0
+	sfx_range(float) : "Sound range" : "256"
+	id(integer) : "Id" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = button_gen : "Button generator"
+[
+	file(string) : "Model"
+	id(integer) : "Id" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = lever_gen : "Lever generator"
+[
+	file(string) : "Model"
+	handle_model(string) : "Handle model"
+	angle(integer) : "Angle" : 0
+	id(integer) : "Id" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = particle_gen : "Particle generator"
+[
+	particle_type(integer) : "Particle type" : 0
+	angles(string) : "Angles"
+	id(integer) : "Id" : 0
+]
+
+@PointClass base(Targetname, Origin) size(-8 -8 -8, 8 8 8) = flu_light : "Fluorescent light"
+[
+	file(string) : "Model"
+]
+
+@PointClass base(Targetname, Origin) size(-8 -8 -8, 8 8 8) = mp_damageboss_radius : "Multiplayer damage boss radius"
+[
+	range(float) : "Range" : "0"
+	id(integer) : "Id" : 0
+]
+
+@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = mp_playerspawn : "Multiplayer player spawn"
+[
+	team(integer) : "Team" : 0
+	yaw(float) : "Yaw" : "0"
+]
+
+@PointClass base(Targetname, Origin) size(-8 -8 -8, 8 8 8) = mp_enemyspawn : "Multiplayer enemy spawn"
+[
+	enemy_string(string) : "Enemies" : : "Semicolon-separated enemy list (zombie;939;1048a)."
+]
+
+@PointClass base(Targetname, Origin) size(-8 -8 -8, 8 8 8) = mp_itemspawn : "Multiplayer item spawn"
+[
+	item_type(integer) : "Item type" : 0
+	respawn_time(integer) : "Respawn time" : 0
+	random_time(string) : "Random time" : "0 0"
+]
+
+@PointClass base(Targetname, Angles, Origin) model({ "path": ":model" }) size(-16 -16 -16, 16 16 16) = misc_model : "Model"
+[
+	model(studio) : "Model" : : "Model file (.b3d or .x)."
+	modelscale(float) : "Scale" : "1.0"
+]

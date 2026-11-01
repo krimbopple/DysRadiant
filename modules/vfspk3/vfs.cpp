@@ -152,7 +152,7 @@ public:
 static StrList GetListInternal( const char *refdir, const char *ext, bool directories, std::size_t depth ){
 	StrList files;
 
-	ASSERT_MESSAGE( refdir[strlen( refdir ) - 1] == '/', "search path does not end in '/'" );
+	ASSERT_MESSAGE( string_empty( refdir ) || refdir[strlen( refdir ) - 1] == '/', "search path does not end in '/'" );
 
 	if ( directories ) {
 		for ( archive_entry_t& arch : g_archives )

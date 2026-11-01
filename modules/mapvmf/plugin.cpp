@@ -44,8 +44,13 @@
 
 #include <kvpp/kvpp.h>
 
+#include <cstdint>
 #include <format>
 #include <map>
+#include <set>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 // copied from plugins/mapq3/parse.cpp
 class LayersParser
@@ -93,12 +98,18 @@ public:
 
 		m_layers.m_currentLayer = &m_layers.m_children.front();
 	}
-	bool read_layers( kvpp::KV1ElementReadable<std::string_view>& visgroups ){
-		for ( auto& visgroup : visgroups ) {
+	bool read_layers( const kvpp::KV1ElementReadable<std::string_view>& visgroups ){
+		for ( const auto& visgroup : visgroups ) {
+			int32_t visgroupid = visgroup["visgroupid"].getValue<int32_t>();
+			// CBRE-EX marks its automatic cast/trigger visgroups with negative ids
+			if ( visgroupid < 0 ) {
+				continue;
+			}
 			auto& layer = m_layers.m_children.emplace_back( visgroup["name"].getValue().data(), nullptr );
 			layer.m_parentIndex = LAYERIDXPARENT;
-			sscanf(visgroup["color"].getValue().data(), "%d %d %d", &layer.m_color[ 0 ], &layer.m_color[ 1 ], &layer.m_color[ 2 ]);
-			m_visgroupidMap[visgroup["visgroupid"].getValue<int32_t>()] = &layer;
+			std::string color( visgroup["color"].getValue() );
+			sscanf( color.c_str(), "%d %d %d", &layer.m_color[ 0 ], &layer.m_color[ 1 ], &layer.m_color[ 2 ]);
+			m_visgroupidMap[visgroupid] = &layer;
 		}
 		return true;
 	}
@@ -148,10 +159,18 @@ public:
 
 	MapVMFAPI(){
 		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf maps", "*.vmf" ) );
+		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf backups", "*.vmx" ) );
 		GlobalFiletypesModule::getTable().addType( Type::Name, Name, filetype_t( "vmf region", "*.reg" ) );
 	}
 	MapFormat* getTable(){
 		return this;
+	}
+	static bool key_is( std::string_view key, const char* name ){
+		const std::size_t length = string_length( name );
+		return key.size() == length && string_equal_nocase_n( key.data(), name, length );
+	}
+	static bool entity_is_group( const Entity* entity ){
+		return entity != nullptr && entity->hasKeyValue( "_cbre_group" );
 	}
 	void readGraph( scene::Node& root, TextInputStream& inputStream, EntityCreator& entityTable ) const override {
 
@@ -171,32 +190,104 @@ public:
 
 		LayersParser layersParser( root );
 
-		for ( auto elem : kv1 ) {
-			auto key = elem.getKey();
-			if (string_equal_nocase(key.data(), "versioninfo")) {
-				for ( auto e : elem ) {
-					if (string_equal_nocase(e.getKey().data(), "mapversion")) {
+		std::map<int64_t, scene::Node*> groupNodes;
+		std::vector<NodeSmartReference> groupRefs;
+
+		const auto find_group = [&groupNodes]( int64_t id ) -> scene::Node* {
+			const auto it = groupNodes.find( id );
+			return it != groupNodes.end() ? it->second : nullptr;
+		};
+
+		const auto read_solid = [&]( const kvpp::KV1ElementReadable<std::string_view>& e, scene::Node& parent ){
+			scene::Node& solid( GlobalBrushCreator().createBrush() );
+			solid.m_layer = nullptr;
+			int64_t groupid = 0;
+			for ( const auto& solidelem : e ) {
+				if ( key_is( solidelem.getKey(), "side" ) ) {
+					float uvaxis[2][4]{};
+					float scale[2]{ 1.0f, 1.0f };
+					const std::string uaxis( solidelem["uaxis"].getValue() );
+					const std::string vaxis( solidelem["vaxis"].getValue() );
+					sscanf(uaxis.c_str(), "[%f %f %f %f] %f", &uvaxis[0][0], &uvaxis[0][1], &uvaxis[0][2], &uvaxis[0][3], &scale[0]);
+					sscanf(vaxis.c_str(), "[%f %f %f %f] %f", &uvaxis[1][0], &uvaxis[1][1], &uvaxis[1][2], &uvaxis[1][3], &scale[1]);
+
+					std::string lightmapscale( solidelem["lightmapscale"].getValue() );
+					if ( lightmapscale.empty() ) {
+						lightmapscale = "16";
+					}
+
+					std::string faceData = std::format("{} {} [{} {} {} {}] [{} {} {} {}] {} {} {} {}\n}}\n",
+						solidelem["plane"].getValue(), solidelem["material"].getValue(),
+						uvaxis[0][0], uvaxis[0][1], uvaxis[0][2], uvaxis[0][3],
+						uvaxis[1][0], uvaxis[1][1], uvaxis[1][2], uvaxis[1][3],
+						solidelem["rotation"].getValue(),
+						scale[0], scale[1],
+						lightmapscale
+					);
+
+					MapImporter* importer = Node_getMapImporter( solid );
+					StringInputStream istream( faceData );
+					importer->importTokens( NewScriptTokeniser( istream ) );
+				} else if ( key_is( solidelem.getKey(), "editor" ) ) {
+					if ( solidelem.hasChild("visgroupid") ) {
+						int32_t visgroupid = solidelem["visgroupid"].getValue<int32_t>();
+						solid.m_layer = layersParser.from_visgroupid(visgroupid);
+					}
+					if ( solidelem.hasChild("groupid") ) {
+						groupid = solidelem["groupid"].getValue<int64_t>();
+					}
+				}
+			}
+			if ( !solid.m_layer ) {
+				solid.m_layer = layersParser.getFirstlayer();
+			}
+			scene::Node* target = &parent;
+			if ( groupid > 0 ) {
+				if ( scene::Node* group = find_group( groupid ) ) {
+					target = group;
+				}
+			}
+			NodeSmartReference solidnode( solid );
+			if ( !Node_getTraversable( *target ) ) {
+				globalWarningStream() << "FIXME: bad solid data in " << Node_getEntity( parent )->getClassName() << '\n';
+			} else {
+				Node_getTraversable( *target )->insert( solidnode );
+			}
+		};
+
+		for ( const auto& elem : kv1 ) {
+			const auto key = elem.getKey();
+			if (key_is(key, "versioninfo")) {
+				for ( const auto& e : elem ) {
+					if (key_is(e.getKey(), "mapversion")) {
 						mapversion = e.getValue<int>();
 					}
 				}
-			} else if (string_equal_nocase(key.data(), "cameras")) {
+			} else if (key_is(key, "cameras")) {
 				// FIXME: do we care about any of this?
-			} else if (string_equal_nocase(key.data(), "cordon")) {
+			} else if (key_is(key, "cordon")) {
 				// FIXME: do we care about any of this?
-			} else if (string_equal_nocase(key.data(), "visgroups")) {
+			} else if (key_is(key, "visgroups")) {
 				layersParser.read_layers( elem );
-			} else if (string_equal_nocase(key.data(), "world") || string_equal_nocase(key.data(), "entity")) {
-				bool hasSolids = false;
+			} else if (key_is(key, "world") || key_is(key, "entity")) {
+				const bool isWorld = key_is(key, "world");
+				bool hasSolids = isWorld;
 				EntityClass* entityClass = NULL;
-				for ( auto e : elem ) {
-					if (string_equal_nocase(e.getKey().data(), "solid")) {
+				for ( const auto& e : elem ) {
+					if (key_is(e.getKey(), "solid")) {
 						if ( e.hasChild("side") ) {
 							hasSolids = true;
 						}
+					} else if (key_is(e.getKey(), "hidden")) {
+						for ( const auto& hidden : e ) {
+							if (key_is(hidden.getKey(), "solid") && hidden.hasChild("side")) {
+								hasSolids = true;
+							}
+						}
 					}
 				}
-				for ( auto e : elem ) {
-					if (string_equal_nocase(e.getKey().data(), "classname")) {
+				for ( const auto& e : elem ) {
+					if (key_is(e.getKey(), "classname")) {
 						entityClass = GlobalEntityClassManager().findOrInsert( e.getValue().data(), hasSolids );
 					}
 				}
@@ -206,65 +297,96 @@ public:
 				}
 				scene::Node& entity( entityTable.createEntity( entityClass ) );
 				entity.m_layer = nullptr;
-				for ( auto e : elem ) {
-					if (string_equal_nocase(e.getKey().data(), "id")) {
+
+				if ( isWorld ) {
+					std::vector<std::pair<scene::Node*, int64_t>> pendingGroups;
+					for ( const auto& e : elem ) {
+						if ( !key_is(e.getKey(), "group") ) {
+							continue;
+						}
+						const int64_t groupid = e.hasChild("id") ? e["id"].getValue<int64_t>() : 0;
+						int64_t parentGroup = 0;
+						if ( e.hasChild("editor") && e["editor"].hasChild("groupid") ) {
+							parentGroup = e["editor"]["groupid"].getValue<int64_t>();
+						}
+						EntityClass* groupClass = GlobalEntityClassManager().findOrInsert( "func_group", true );
+						scene::Node& groupNode( entityTable.createEntity( groupClass ) );
+						Node_getEntity( groupNode )->setKeyValue( "_cbre_group", "1" );
+						groupNode.m_layer = layersParser.getFirstlayer();
+						if ( e.hasChild("editor") && e["editor"].hasChild("visgroupid") ) {
+							groupNode.m_layer = layersParser.from_visgroupid( e["editor"]["visgroupid"].getValue<int32_t>() );
+							if ( !groupNode.m_layer ) {
+								groupNode.m_layer = layersParser.getFirstlayer();
+							}
+						}
+						groupRefs.emplace_back( groupNode );
+						groupNodes[groupid] = &groupNode;
+						pendingGroups.emplace_back( &groupNode, parentGroup );
+					}
+
+					std::set<scene::Node*> placedGroups;
+					while ( !pendingGroups.empty() ) {
+						bool progress = false;
+						std::vector<std::pair<scene::Node*, int64_t>> remaining;
+						for ( const auto& pending : pendingGroups ) {
+							scene::Node* parentNode = &entity;
+							if ( pending.second > 0 ) {
+								if ( scene::Node* group = find_group( pending.second ) ) {
+									if ( group != pending.first ) {
+										parentNode = group;
+									}
+								}
+							}
+							if ( parentNode == &entity || placedGroups.contains( parentNode ) ) {
+								Node_getTraversable( *parentNode )->insert( NodeSmartReference( *pending.first ) );
+								placedGroups.insert( pending.first );
+								progress = true;
+							} else {
+								remaining.push_back( pending );
+							}
+						}
+						if ( !progress ) {
+							for ( const auto& pending : remaining ) {
+								Node_getTraversable( entity )->insert( NodeSmartReference( *pending.first ) );
+							}
+							break;
+						}
+						pendingGroups = std::move( remaining );
+					}
+				}
+
+				int64_t entityGroupId = 0;
+				for ( const auto& e : elem ) {
+					if (key_is(e.getKey(), "id")) {
 						// FIXME: do we need to keep track of this?
-					} else if (string_equal_nocase(e.getKey().data(), "solid")) {
+					} else if (key_is(e.getKey(), "group")) {
+						// already handled above
+					} else if (key_is(e.getKey(), "hidden")) {
+						for ( const auto& hidden : e ) {
+							if (key_is(hidden.getKey(), "solid")) {
+								read_solid( hidden, entity );
+							}
+						}
+					} else if (key_is(e.getKey(), "solid")) {
 						if ( !e.hasChild("side") ) {
 							Node_getEntity( entity )->setKeyValue( e.getKey().data(), e.getValue().data() );
 							continue;
 						}
-						scene::Node& solid( GlobalBrushCreator().createBrush() );
-						solid.m_layer = nullptr;
-						for ( auto solidelem : e ) {
-							if (string_equal_nocase(solidelem.getKey().data(), "side")) {
-
-								float uvaxis[2][4];
-								float scale[2];
-								auto uaxis = solidelem["uaxis"];
-								auto vaxis = solidelem["vaxis"];
-								sscanf(uaxis.getValue().data(), "[%f %f %f %f] %f", &uvaxis[0][0], &uvaxis[0][1], &uvaxis[0][2], &uvaxis[0][3], &scale[0]);
-								sscanf(vaxis.getValue().data(), "[%f %f %f %f] %f", &uvaxis[1][0], &uvaxis[1][1], &uvaxis[1][2], &uvaxis[1][3], &scale[1]);
-
-								std::string faceData = std::format("{} {} [{} {} {} {}] [{} {} {} {}] {} {} {} {}\n}}\n",
-									solidelem["plane"].getValue(), solidelem["material"].getValue(),
-									uvaxis[0][0], uvaxis[0][1], uvaxis[0][2], uvaxis[0][3],
-									uvaxis[1][0], uvaxis[1][1], uvaxis[1][2], uvaxis[1][3],
-									solidelem["rotation"].getValue(),
-									scale[0], scale[1],
-									solidelem["lightmapscale"].getValue()
-								);
-
-								MapImporter* importer = Node_getMapImporter( solid );
-								StringInputStream istream( faceData );
-								importer->importTokens( NewScriptTokeniser( istream ) );
-							}  else if (string_equal_nocase(solidelem.getKey().data(), "editor")) {
-								if ( solidelem.hasChild("visgroupid") ) {
-									int32_t visgroupid = solidelem["visgroupid"].getValue<int32_t>();
-									solid.m_layer = layersParser.from_visgroupid(visgroupid);
-								}
-							}
-						}
-						if ( !solid.m_layer ) {
-							solid.m_layer = layersParser.getFirstlayer();
-						}
-						NodeSmartReference solidnode( solid );
-						if ( !Node_getTraversable( entity ) ) {
-							globalWarningStream() << "FIXME: bad solid data in " << Node_getEntity( entity )->getClassName() << '\n';
-						} else {
-							Node_getTraversable( entity )->insert( solidnode );
-						}
-					} else if (string_equal_nocase(e.getKey().data(), "editor")) {
+						read_solid( e, entity );
+					} else if (key_is(e.getKey(), "editor")) {
 						if ( e.hasChild("visgroupid") ) {
 							int32_t visgroupid = e["visgroupid"].getValue<int32_t>();
 							entity.m_layer = layersParser.from_visgroupid(visgroupid);
 						}
-					} else if (string_equal_nocase(e.getKey().data(), "connections")) {
-						for ( auto connection : e ) {
+						if ( e.hasChild("groupid") ) {
+							entityGroupId = e["groupid"].getValue<int64_t>();
+						}
+					} else if (key_is(e.getKey(), "connections")) {
+						for ( const auto& connection : e ) {
 							Node_getEntity( entity )->addOutput( connection.getKey().data(), connection.getValue().data() );
 						}
 					} else {
-						if (hasSolids && string_equal_nocase(e.getKey().data(), "origin")) {
+						if (hasSolids && key_is(e.getKey(), "origin")) {
 							// do nothing
 						} else {
 							Node_getEntity( entity )->setKeyValue( e.getKey().data(), e.getValue().data() );
@@ -274,8 +396,14 @@ public:
 				if ( !entity.m_layer ) {
 					entity.m_layer = layersParser.getFirstlayer();
 				}
+				scene::Node* insertParent = &root;
+				if ( !isWorld && entityGroupId > 0 ) {
+					if ( scene::Node* group = find_group( entityGroupId ) ) {
+						insertParent = group;
+					}
+				}
 				NodeSmartReference node( entity );
-				Node_getTraversable( root )->insert( node );
+				Node_getTraversable( *insertParent )->insert( node );
 			}
 		}
 
@@ -291,6 +419,9 @@ public:
 			m_element["id"] = m_childID++;
 		}
 		void visit( const char* key, const char* value ) override {
+			if ( string_equal_nocase( key, "_cbre_group" ) ) {
+				return;
+			}
 			m_element[key] = value;
 		}
 	};
@@ -307,11 +438,28 @@ public:
 	class MapVMFWalker : public scene::Traversable::Walker
 	{
 		mutable int64_t m_childID; // global element index, seems to be shared between entities and solids
-		mutable int64_t m_childIndex;
-		int64_t m_worldIndex;
+		mutable std::size_t m_currentElement;
+		mutable std::size_t m_worldElement;
+		mutable std::vector<int64_t> m_groupStack;
+		mutable std::vector<std::size_t> m_elementStack;
 		kvpp::KV1Writer<std::string>& m_writer;
+
+		int64_t currentGroup() const {
+			return m_groupStack.empty() ? 0 : m_groupStack.back();
+		}
+		void writeEditor( kvpp::KV1ElementWritable<std::string>& element, int64_t groupid, const Layer* layer ) const {
+			auto& editor = element.addChild("editor");
+			editor["visgroupshown"] = 1;
+			editor["visgroupautoshown"] = 1;
+			if ( groupid > 0 ) {
+				editor["groupid"] = groupid;
+			}
+			if ( layer != nullptr && layer->m_ownIndex > 0 ) {
+				editor["visgroupid"] = layer->m_ownIndex;
+			}
+		}
 	public:
-		MapVMFWalker( kvpp::KV1Writer<std::string>& writer, int64_t worldIndex ) : m_childID( 1 ), m_childIndex( worldIndex ), m_worldIndex( worldIndex ), m_writer( writer ) {
+		MapVMFWalker( kvpp::KV1Writer<std::string>& writer, std::size_t worldIndex ) : m_childID( 1 ), m_currentElement( worldIndex ), m_worldElement( worldIndex ), m_writer( writer ) {
 		}
 		class MapVMFTokenWriter : public TokenWriter
 		{
@@ -348,7 +496,7 @@ public:
 				}
 			}
 		};
-		void writeSolid( scene::Node& node, kvpp::KV1ElementWritable<std::string>& solid ) const {
+		void writeSolid( scene::Node& node, kvpp::KV1ElementWritable<std::string>& solid, bool inWorld ) const {
 			solid["id"] = m_childID++;
 
 			MapExporter* exporter = Node_getMapExporter( node );
@@ -379,6 +527,7 @@ public:
 				side["lightmapscale"] = std::format( "{}", lightmapscale );
 				side["smoothing_groups"] = 0; // FIXME: make configurable
 			});
+			writeEditor( solid, inWorld ? currentGroup() : 0, node.m_layer );
 		}
 		virtual bool pre( scene::Node& node ) const {
 			Entity* entity = Node_getEntity( node );
@@ -400,7 +549,17 @@ public:
 							}
 						}
 					}
-					m_childIndex = m_worldIndex;
+					m_worldElement = m_writer.getChildCount() - 1;
+					m_currentElement = m_worldElement;
+					m_groupStack.clear();
+					m_elementStack.clear();
+				} else if ( entity_is_group( entity ) ) {
+					const int64_t parentGroup = currentGroup();
+					auto& group = m_writer[m_worldElement].addChild("group");
+					const int64_t id = m_childID++;
+					group["id"] = id;
+					writeEditor( group, parentGroup, node.m_layer );
+					m_groupStack.push_back( id );
 				} else {
 					auto& child = m_writer.addChild("entity");
 					MapVMFWriteKeyValue visitor( child, m_childID );
@@ -419,13 +578,33 @@ public:
 							}
 						}
 					}
-					m_childIndex = m_writer.getChildCount() - 1;
+					writeEditor( child, currentGroup(), node.m_layer );
+					m_elementStack.push_back( m_currentElement );
+					m_currentElement = m_writer.getChildCount() - 1;
 				}
 			} else if ( Node_isBrush( node ) ) {
-				writeSolid( node, m_writer[m_childIndex].addChild("solid") );
+				const bool inWorld = m_currentElement == m_worldElement;
+				writeSolid( node, m_writer[m_currentElement].addChild("solid"), inWorld );
 			}
 
 			return true;
+		}
+		void post( scene::Node& node ) const override {
+			Entity* entity = Node_getEntity( node );
+			if ( entity == nullptr ) {
+				return;
+			}
+			if ( string_equal( entity->getClassName(), "worldspawn" ) ) {
+				return;
+			}
+			if ( entity_is_group( entity ) ) {
+				if ( !m_groupStack.empty() ) {
+					m_groupStack.pop_back();
+				}
+			} else if ( !m_elementStack.empty() ) {
+				m_currentElement = m_elementStack.back();
+				m_elementStack.pop_back();
+			}
 		}
 	};
 	void writeGraph( scene::Node& root, GraphTraversalFunc traverse, TextOutputStream& outputStream ) const override {
@@ -443,25 +622,27 @@ public:
 		writer["versioninfo"]["formatversion"] = 100; // not sure what this corresponds to
 		writer["versioninfo"]["prefab"] = 0; // FIXME: make configurable
 
-#if 0
 		// write visgroups
-		auto* layers = Node_getLayers( root );
-		auto& visgroups = writer.addChild("visgroups");
-		layers->update_ownIndices();
-		layers->forEach([&]( Layer& layer ){
-			auto& visgroup = visgroups.addChild("visgroup");
-			visgroup["name"] = layer.m_name.c_str();
-			visgroup["visgroupid"] = layer.m_ownIndex;
-			visgroup["color"] = std::format("{} {} {}", layer.m_color[0], layer.m_color[1], layer.m_color[2]);
-		});
-#endif
+		if ( auto* layers = Node_getLayers( root ); layers != nullptr ) {
+			layers->update_ownIndices();
+			auto& visgroups = writer.addChild("visgroups");
+			layers->forEach([&]( Layer& layer ){
+				if ( layer.m_ownIndex <= 0 ) {
+					return;
+				}
+				auto& visgroup = visgroups.addChild("visgroup");
+				visgroup["name"] = layer.m_name.c_str();
+				visgroup["visgroupid"] = layer.m_ownIndex;
+				visgroup["color"] = std::format("{} {} {}", layer.m_color[0], layer.m_color[1], layer.m_color[2]);
+			});
+		}
 
 		// traverse tree
 		traverse(root, MapVMFWalker( writer, writer.getChildCount() ));
 
 		// extra garbage
 		writer["cameras"]["activecamera"] = -1; // shrug
-		writer["cordons"]["active"] = 0;
+		writer["cordon"]["active"] = 0;
 
 		// bake and write
 		auto baked = writer.bake();

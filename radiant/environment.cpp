@@ -198,7 +198,7 @@ CopiedString g_openMapByCmd;
 
 void cmdMap(){
 	for ( int i = 1; i < g_argc; ++i )
-		if( path_extension_is( g_argv[i], "map" ) ){
+		if( path_extension_is( g_argv[i], "map" ) || path_extension_is( g_argv[i], "vmf" ) ){
 			g_openMapByCmd = StringStream( PathCleaned( g_argv[i] ) );
 			return;
 		}

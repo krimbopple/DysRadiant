@@ -1,0 +1,47 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dysradiant-tool-dyslight", "..\..\build-vs2022\dysradiant-tool-dyslight.vcxproj", "{353670ED-E9EF-3D75-BA48-ADA894818016}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dysradiant-library-stb", "..\..\build-vs2022\dysradiant-library-stb.vcxproj", "{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZERO_CHECK", "..\..\build-vs2022\ZERO_CHECK.vcxproj", "{9A077036-4316-35BE-9F8F-476092AECE2C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+		MinSizeRel|x64 = MinSizeRel|x64
+		RelWithDebInfo|x64 = RelWithDebInfo|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.Debug|x64.ActiveCfg = Debug|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.Debug|x64.Build.0 = Debug|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.Release|x64.ActiveCfg = Release|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.Release|x64.Build.0 = Release|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.MinSizeRel|x64.ActiveCfg = MinSizeRel|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.MinSizeRel|x64.Build.0 = MinSizeRel|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
+		{353670ED-E9EF-3D75-BA48-ADA894818016}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.Debug|x64.ActiveCfg = Debug|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.Debug|x64.Build.0 = Debug|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.Release|x64.ActiveCfg = Release|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.Release|x64.Build.0 = Release|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.MinSizeRel|x64.ActiveCfg = MinSizeRel|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.MinSizeRel|x64.Build.0 = MinSizeRel|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
+		{C3A4FA87-8BAA-3BD0-B3DE-5497E0562936}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.Debug|x64.ActiveCfg = Debug|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.Debug|x64.Build.0 = Debug|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.Release|x64.ActiveCfg = Release|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.Release|x64.Build.0 = Release|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.MinSizeRel|x64.ActiveCfg = MinSizeRel|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.MinSizeRel|x64.Build.0 = MinSizeRel|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
+		{9A077036-4316-35BE-9F8F-476092AECE2C}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

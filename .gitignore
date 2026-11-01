@@ -4,6 +4,7 @@
 /install*/
 /.vscode/
 /.vs/
+**/.vs/
 /.idea/
 /.cache/
 /.clang*

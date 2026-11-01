@@ -93,6 +93,20 @@ void QE_InitVFS(){
 	for( const auto& path : ExtraResourcePaths_get() )
 		paths_push( path.c_str() );
 
+	if ( const char* extra = g_pGameDescription->getKeyValue( "extraresourcepaths" ); !string_empty( extra ) ) {
+		std::string list( extra );
+		std::size_t start = 0;
+		while ( start <= list.size() ) {
+			const std::size_t end = list.find( '|', start );
+			const std::string path = list.substr( start, end == std::string::npos ? std::string::npos : end - start );
+			paths_push( path.c_str() );
+			if ( end == std::string::npos ) {
+				break;
+			}
+			start = end + 1;
+		}
+	}
+
 	StringOutputStream str( 256 );
 	// ~/.<gameprefix>/<fs_game>
 	paths_push( str( userRoot, gamename, '/' ) ); // userGamePath

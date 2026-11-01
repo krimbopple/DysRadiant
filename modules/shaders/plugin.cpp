@@ -80,6 +80,37 @@ typedef SingletonModule<ShadersQ3API, ShadersDependencies, DependenciesAPIConstr
 ShadersQ3Module g_ShadersQ3Module;
 
 
+class ShadersCBREAPI
+{
+	ShaderSystem* m_shaderscbre;
+public:
+	typedef ShaderSystem Type;
+	STRING_CONSTANT( Name, "cbre" );
+
+	ShadersCBREAPI( ShadersDependencies& dependencies ){
+		g_shadersExtension = "shader";
+		g_shadersDirectory = "";
+		g_texturePrefix = "";
+		g_enableDefaultShaders = true;
+		g_shaderLanguage = SHADERLANGUAGE_QUAKE3;
+		g_useShaderList = false;
+		g_bitmapModule = dependencies.getBitmapModule().getTable();
+		Shaders_Construct();
+		m_shaderscbre = &GetShaderSystem();
+	}
+	~ShadersCBREAPI(){
+		Shaders_Destroy();
+	}
+	ShaderSystem* getTable(){
+		return m_shaderscbre;
+	}
+};
+
+typedef SingletonModule<ShadersCBREAPI, ShadersDependencies, DependenciesAPIConstructor<ShadersCBREAPI, ShadersDependencies> > ShadersCBREModule;
+
+ShadersCBREModule g_ShadersCBREModule;
+
+
 class ShadersDoom3API
 {
 	ShaderSystem* m_shadersdoom3;
@@ -207,6 +238,7 @@ extern "C" void RADIANT_DLLEXPORT Radiant_RegisterModules( ModuleServer& server 
 	initialiseModule( server );
 
 	g_ShadersQ3Module.selfRegister();
+	g_ShadersCBREModule.selfRegister();
 	g_ShadersDoom3Module.selfRegister();
 	g_ShadersQuake4Module.selfRegister();
 	g_ShadersSourceModule.selfRegister();
