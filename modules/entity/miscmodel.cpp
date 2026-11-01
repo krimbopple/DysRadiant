@@ -169,8 +169,32 @@ class MiscModel :
 	}
 
 	void updateTransform(){
-		m_transform.localToParent() = g_matrix4_identity;
-		matrix4_transform_by_euler_xyz_degrees( m_transform.localToParent(), m_origin, m_angles, m_scale );
+		if ( string_equal( m_entity.getClassName(), "mesh" ) ) {
+			Vector3 origin = m_origin;
+			Vector3 position;
+			if ( string_parse_vector3( m_entity.getKeyValue( "position" ), position ) ) {
+				origin = Vector3( position[0], position[2], position[1] );
+			}
+			Vector3 angles = m_angles;
+			Vector3 scale = m_scale;
+			string_parse_vector3( m_entity.getKeyValue( "angles" ), angles );
+			if ( !string_parse_vector3( m_entity.getKeyValue( "scale" ), scale ) || scale[0] == 0 || scale[1] == 0 || scale[2] == 0 ) {
+				scale = SCALEKEY_IDENTITY;
+			}
+			scale = Vector3( scale[0], scale[2], scale[1] );
+			Matrix4 transform = g_matrix4_identity;
+			matrix4_translate_by_vec3( transform, origin );
+			matrix4_multiply_by_matrix4( transform, matrix4_rotation_for_z_degrees( angles[1] ) );
+			matrix4_multiply_by_matrix4( transform, matrix4_rotation_for_x_degrees( -angles[0] ) );
+			matrix4_multiply_by_matrix4( transform, matrix4_rotation_for_y_degrees( -angles[2] ) );
+			matrix4_multiply_by_matrix4( transform, matrix4_scale_for_vec3( scale ) );
+			m_transform.localToParent() = transform;
+		}
+		else
+		{
+			m_transform.localToParent() = g_matrix4_identity;
+			matrix4_transform_by_euler_xyz_degrees( m_transform.localToParent(), m_origin, m_angles, m_scale );
+		}
 		m_transformChanged();
 	}
 

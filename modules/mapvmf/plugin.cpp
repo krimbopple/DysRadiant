@@ -21,6 +21,8 @@
 
 #include "plugin.h"
 
+#include <cstdio>
+
 #include "iscriplib.h"
 #include "ibrush.h"
 #include "ipatch.h"
@@ -216,7 +218,7 @@ public:
 						lightmapscale = "16";
 					}
 
-					std::string faceData = std::format("{} {} [{} {} {} {}] [{} {} {} {}] {} {} {} {}\n}}\n",
+					std::string faceData = std::format("{} \"{}\" [{} {} {} {}] [{} {} {} {}] {} {} {} {}\n}}\n",
 						solidelem["plane"].getValue(), solidelem["material"].getValue(),
 						uvaxis[0][0], uvaxis[0][1], uvaxis[0][2], uvaxis[0][3],
 						uvaxis[1][0], uvaxis[1][1], uvaxis[1][2], uvaxis[1][3],
@@ -474,7 +476,10 @@ public:
 				m_lines.push_back("");
 			}
 			virtual void writeToken( const char* token ) {
-				m_lines.back().append( std::format( "{} ", token ) );
+				if( std::string_view( token ).find_first_of( " \t\r\n" ) != std::string_view::npos )
+					m_lines.back().append( std::format( "\"{}\" ", token ) );
+				else
+					m_lines.back().append( std::format( "{} ", token ) );
 			}
 			virtual void writeString( const char* string ) {
 				m_lines.back().append( std::format( "\"{}\" ", string ) );
@@ -506,18 +511,24 @@ public:
 			MapVMFTokenWriter writer;
 			exporter->exportTokens( writer );
 			writer.forEachLine( m_childID, solid, [](int64_t& childID, std::string& line, kvpp::KV1ElementWritable<std::string>& side){
-				double points[3][3];
-				char material[128];
-				double uaxis[4];
-				double vaxis[4];
-				double rotation;
-				double scale[2];
-				double lightmapscale;
-				sscanf(line.c_str(), "( %lf %lf %lf ) ( %lf %lf %lf ) ( %lf %lf %lf ) %128s [ %lf %lf %lf %lf ] [ %lf %lf %lf %lf ] %lf %lf %lf %lf",
+				double points[3][3]{};
+				char material[128]{};
+				double uaxis[4]{};
+				double vaxis[4]{};
+				double rotation{};
+				double scale[2]{};
+				double lightmapscale{};
+				int parsed = sscanf(line.c_str(), "( %lf %lf %lf ) ( %lf %lf %lf ) ( %lf %lf %lf ) \"%127[^\"]\" [ %lf %lf %lf %lf ] [ %lf %lf %lf %lf ] %lf %lf %lf %lf",
 					&points[0][0], &points[0][1], &points[0][2], &points[1][0], &points[1][1], &points[1][2], &points[2][0], &points[2][1], &points[2][2],
 					material, &uaxis[0], &uaxis[1], &uaxis[2], &uaxis[3], &vaxis[0], &vaxis[1], &vaxis[2], &vaxis[3], &rotation, &scale[0], &scale[1],
 					&lightmapscale
 				);
+				if ( parsed != 22 )
+					sscanf(line.c_str(), "( %lf %lf %lf ) ( %lf %lf %lf ) ( %lf %lf %lf ) %127s [ %lf %lf %lf %lf ] [ %lf %lf %lf %lf ] %lf %lf %lf %lf",
+						&points[0][0], &points[0][1], &points[0][2], &points[1][0], &points[1][1], &points[1][2], &points[2][0], &points[2][1], &points[2][2],
+						material, &uaxis[0], &uaxis[1], &uaxis[2], &uaxis[3], &vaxis[0], &vaxis[1], &vaxis[2], &vaxis[3], &rotation, &scale[0], &scale[1],
+						&lightmapscale
+					);
 				side["id"] = childID++;
 				side["plane"] = std::format( "({} {} {}) ({} {} {}) ({} {} {})", points[0][0], points[0][1], points[0][2], points[1][0], points[1][1], points[1][2], points[2][0], points[2][1], points[2][2] );
 				side["material"] = material;

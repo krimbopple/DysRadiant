@@ -23,6 +23,7 @@
 
 #include "iarchive.h"
 #include "idatastream.h"
+#include "ifilesystem.h"
 #include "imodel.h"
 #include "modelskin.h"
 
@@ -70,6 +71,24 @@ public:
 	}
 };
 
+static CopiedString resolveTexturePath( const char* raw ){
+	std::string cleaned( raw );
+	std::replace( cleaned.begin(), cleaned.end(), '\\', '/' );
+	std::vector<std::string> candidates;
+	candidates.push_back( cleaned );
+	if ( string_equal_prefix_nocase( cleaned.c_str(), "gfx/map/" ) ) {
+		candidates.push_back( cleaned.substr( 8 ) );
+	}
+	std::string base = path_get_filename_start( cleaned.c_str() );
+	candidates.push_back( base );
+	candidates.push_back( "textures/" + base );
+	for ( const auto& candidate : candidates ) {
+		if ( string_not_empty( GlobalFileSystem().findFile( candidate.c_str() ) ) ) {
+			return CopiedString( candidate.c_str() );
+		}
+	}
+	return CopiedString( "" );
+}
 struct AssScene
 {
 	const aiScene* m_scene;
@@ -225,6 +244,7 @@ private:
 #ifdef _DEBUG
 						globalOutputStream() << "matname: " << matname.C_Str() << '\n';
 #endif
+			CopiedString texturePath;
 			if( aiString texname;
 			    aiReturn_SUCCESS == material->Get( AI_MATKEY_TEXTURE_DIFFUSE( 0 ), texname )
 			 && texname.length != 0
@@ -235,14 +255,19 @@ private:
 #ifdef _DEBUG
 							globalOutputStream() << "texname: " << texname.C_Str() << '\n';
 #endif
-				m_shader = StringStream<64>( PathCleaned( PathExtensionless( texname.C_Str() ) ) );
+				texturePath = resolveTexturePath( texname.C_Str() );
+				if ( !texturePath.empty() ) {
+					m_shader = StringStream<128>( PathCleaned( texturePath.c_str() ) );
+				} else {
+					m_shader = StringStream<64>( PathCleaned( PathExtensionless( texname.C_Str() ) ) );
+				}
 			}
 			else{
 				m_shader = StringStream<64>( PathCleaned( PathExtensionless( matname.C_Str() ) ) );
 			}
 
 			const CopiedString oldShader( m_shader );
-			if( strchr( m_shader.c_str(), '/' ) == nullptr ){ /* texture is likely in the folder, where model is */
+			if( strchr( m_shader.c_str(), '/' ) == nullptr && texturePath.empty() ){ /* texture is likely in the folder, where model is */
 				m_shader = StringStream<64>( scene.m_rootPath, m_shader );
 			}
 			else{

@@ -25,6 +25,7 @@
 #include "iimage.h"
 #include "ifilesystem.h"
 #include "iarchive.h"
+#include "os/path.h"
 
 #include "stream/stringstream.h"
 
@@ -45,7 +46,13 @@ Image* QERApp_LoadImage( void* environment, const char* name ){
 		}
 		void visit( const char* name, const _QERPlugImageTable& table ) const override {
 			if ( m_image == 0 ) {
-				ArchiveFile* file = GlobalFileSystem().openFile( StringStream( m_name, '.', name ) );
+				CopiedString path;
+				if ( path_extension_is( m_name, name ) ) {
+					path = m_name;
+				} else {
+					path = StringStream( m_name, '.', name );
+				}
+				ArchiveFile* file = GlobalFileSystem().openFile( path.c_str() );
 				if ( file != 0 ) {
 					m_image = table.loadImage( *file );
 					file->release();

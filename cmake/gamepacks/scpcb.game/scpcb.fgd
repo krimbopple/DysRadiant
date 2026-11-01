@@ -63,10 +63,10 @@
 	file(string) : "Model"
 ]
 
-@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": ":file" }) size(-16 -16 -16, 16 16 16) = model : "Model" []
-@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": ":file" }) size(-16 -16 -16, 16 16 16) = model_nocoll : "Model (no collision)" []
+@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": file }) size(-16 -16 -16, 16 16 16) = model : "Model" []
+@PointClass base(Targetname, Angles, Origin, CBREEntity) model({ "path": file }) size(-16 -16 -16, 16 16 16) = model_nocoll : "Model (no collision)" []
 
-@PointClass base(Targetname, Angles, Origin) size(-8 -8 -8, 8 8 8) = mesh : "Mesh"
+@PointClass base(Targetname, Angles, Origin) model({ "path": file }) size(-8 -8 -8, 8 8 8) = mesh : "Mesh"
 [
 	file(string) : "Model"
 	texture(string) : "Texture"
@@ -159,7 +159,7 @@
 	random_time(string) : "Random time" : "0 0"
 ]
 
-@PointClass base(Targetname, Angles, Origin) model({ "path": ":model" }) size(-16 -16 -16, 16 16 16) = misc_model : "Model"
+@PointClass base(Targetname, Angles, Origin) model({ "path": model }) size(-16 -16 -16, 16 16 16) = misc_model : "Model"
 [
 	model(studio) : "Model" : : "Model file (.b3d or .x)."
 	modelscale(float) : "Scale" : "1.0"
