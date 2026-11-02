@@ -97,6 +97,7 @@ struct Map
 	std::vector<Solid> solids;
 	std::vector<Entity> entities;
 	std::vector<Visgroup> visgroups;
+	std::map<std::string, std::string> worldKeys; // worldspawn properties
 };
 
 std::string lower( std::string s );

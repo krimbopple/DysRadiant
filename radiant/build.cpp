@@ -24,11 +24,17 @@
 
 #include <map>
 #include <list>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
 #include "stream/stringstream.h"
 #include "versionlib.h"
 
 #include "qe3.h"
 #include "mainframe.h"
+#include "camwindow.h"
 
 typedef std::map<CopiedString, CopiedString> Variables;
 Variables g_build_variables;
@@ -314,14 +320,7 @@ Project::iterator Project_find( Project& project, std::size_t index ){
 	       ? std::next( project.begin(), index )
 	       : project.end();
 }
-// returns either found index or fallback to 0
-size_t Project_find( const Project& project, const Project::const_iterator iterator ){
-	size_t idx = 0;
-	for( auto i = project.cbegin(); i != project.cend(); ++i, ++idx )
-		if( i == iterator )
-			return idx;
-	return 0;
-}
+
 
 Build::iterator Build_find( Build& build, std::size_t index ){
 	Build::iterator i = build.begin();
@@ -437,7 +436,7 @@ namespace
 {
 Project g_build_project;
 bool g_build_changed = false;
-Project::const_iterator g_lastExecutedBuild;
+size_t g_lastExecutedBuild = 0;
 Tools g_build_tools;
 bool g_tools_changed = false;
 }
@@ -469,6 +468,10 @@ void build_init_tools(){
 	}
 }
 
+bool g_edit_dyslight_on_build = true;
+static CopiedString g_last_dyslight_command;
+static bool DyslightBake_editCommand( CopiedString& command );
+
 std::vector<CopiedString> build_construct_commands( size_t buildIdx ){
 	build_init_variables();
 	build_init_tools();
@@ -477,11 +480,25 @@ std::vector<CopiedString> build_construct_commands( size_t buildIdx ){
 
 	if ( const auto buildIt = Project_find( g_build_project, buildIdx ); buildIt != g_build_project.end() )
 	{
-		g_lastExecutedBuild = buildIt;
+		g_lastExecutedBuild = buildIdx;
 		for ( const auto& command : buildIt->second )
 		{
 			if ( const StringBuffer output = command.evaluate(); !output.empty() )
-				commands.emplace_back( output.c_str() );
+			{
+				CopiedString evaluated = output.c_str();
+				if ( strstr( evaluated.c_str(), "dyslight" ) != nullptr )
+				{
+					if ( g_edit_dyslight_on_build )
+					{
+						DyslightBake_editCommand( evaluated );
+						build_clear_variables();
+						return {};
+					}
+					if ( !g_last_dyslight_command.empty() )
+						evaluated = g_last_dyslight_command;
+				}
+				commands.emplace_back( evaluated );
+			}
 		}
 	}
 	else
@@ -632,7 +649,530 @@ void build_commands_write( const char* filename ){
 #include <QPushButton>
 #include <QLabel>
 #include <QKeyEvent>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QCheckBox>
+#include <QFormLayout>
+#include <QVBoxLayout>
+#include <QPlainTextEdit>
+#include <QProcess>
+#include <QEventLoop>
+#include <QProgressDialog>
+#include <QSettings>
+#include <QFileInfo>
+#include <QDir>
+#include <QMap>
+#include <QPixmap>
+#include <QResizeEvent>
+#include <QApplication>
 
+namespace
+{
+
+struct DyslightOptions
+{
+	std::string executable;
+	std::string mapPath;
+	int mode = 1;
+	int atlas = 1024;
+	int blur = 0;
+	int border = 0;
+	double texels = 0.0;
+	bool hasAtlas = false;
+	bool hasBlur = false;
+	bool hasBorder = false;
+	bool hasTexels = false;
+	bool overrideAmbient = false;
+	int ambientR = 64;
+	int ambientG = 64;
+	int ambientB = 64;
+	bool shadows = true;
+	bool hasShadowFlag = false;
+	std::vector<std::string> passthrough;
+};
+
+static int dyslightDefaultAtlas( int mode ){
+	return mode == 1 ? 1024 : 512;
+}
+
+static int dyslightDefaultBlur( int mode ){
+	return mode == 1 ? 0 : 1;
+}
+
+static int dyslightDefaultBorder( int mode ){
+	return mode == 1 ? 0 : 2;
+}
+
+static std::vector<std::string> splitCommandLine( const std::string& line ){
+	std::vector<std::string> tokens;
+	std::string current;
+	bool quoted = false;
+	for ( char c : line ) {
+		if ( c == '"' ) {
+			quoted = !quoted;
+			continue;
+		}
+		if ( !quoted && std::isspace( (unsigned char)c ) ) {
+			if ( !current.empty() ) {
+				tokens.push_back( current );
+				current.clear();
+			}
+		}
+		else {
+			current.push_back( c );
+		}
+	}
+	if ( !current.empty() )
+		tokens.push_back( current );
+	return tokens;
+}
+
+static bool parseDyslightCommand( const std::string& line, DyslightOptions& options ){
+	const auto tokens = splitCommandLine( line );
+	if ( tokens.size() < 3 )
+		return false;
+
+	options.executable = tokens[0];
+	size_t i = 1;
+	if ( i < tokens.size() && ( tokens[i] == "1" || tokens[i] == "2" || tokens[i] == "3" ) ) {
+		options.mode = std::atoi( tokens[i].c_str() );
+		++i;
+	}
+	if ( i < tokens.size() && !tokens[i].empty() && tokens[i][0] != '-' ) {
+		options.mapPath = tokens[i];
+		++i;
+	}
+	if ( options.mapPath.empty() )
+		return false;
+
+	for ( ; i < tokens.size(); ++i ) {
+		const std::string& arg = tokens[i];
+		auto value = [&]( std::string& out ) {
+			if ( i + 1 >= tokens.size() )
+				return false;
+			out = tokens[++i];
+			return true;
+		};
+		std::string v;
+		if ( arg == "--atlas" && value( v ) ) {
+			options.atlas = std::atoi( v.c_str() );
+			options.hasAtlas = true;
+		}
+		else if ( arg == "--blur" && value( v ) ) {
+			options.blur = std::atoi( v.c_str() );
+			options.hasBlur = true;
+		}
+		else if ( arg == "--border" && value( v ) ) {
+			options.border = std::atoi( v.c_str() );
+			options.hasBorder = true;
+		}
+		else if ( arg == "--texels" && value( v ) ) {
+			options.texels = std::atof( v.c_str() );
+			options.hasTexels = true;
+		}
+		else if ( arg == "--ambient" ) {
+			std::string r, g, b;
+			if ( value( r ) && value( g ) && value( b ) ) {
+				options.overrideAmbient = true;
+				options.ambientR = std::atoi( r.c_str() );
+				options.ambientG = std::atoi( g.c_str() );
+				options.ambientB = std::atoi( b.c_str() );
+			}
+		}
+		else if ( arg == "--noshadows" ) {
+			options.shadows = false;
+			options.hasShadowFlag = true;
+		}
+		else {
+			options.passthrough.push_back( arg );
+		}
+	}
+
+	if ( !options.hasAtlas )
+		options.atlas = dyslightDefaultAtlas( options.mode );
+	if ( !options.hasBlur )
+		options.blur = dyslightDefaultBlur( options.mode );
+	if ( !options.hasBorder )
+		options.border = dyslightDefaultBorder( options.mode );
+	return true;
+}
+
+class DyslightPreviewLabel : public QLabel
+{
+	QPixmap m_source;
+public:
+	explicit DyslightPreviewLabel( QWidget* parent ) : QLabel( parent ){
+		setAlignment( Qt::AlignCenter );
+		setMinimumSize( 384, 384 );
+		setFrameShape( QFrame::StyledPanel );
+	}
+	void setSourcePixmap( const QPixmap& pixmap ){
+		m_source = pixmap;
+		if ( m_source.isNull() )
+			QLabel::clear();
+		else
+			updatePixmap();
+	}
+protected:
+	void resizeEvent( QResizeEvent* event ) override {
+		QLabel::resizeEvent( event );
+		updatePixmap();
+	}
+private:
+	void updatePixmap(){
+		if ( !m_source.isNull() )
+			QLabel::setPixmap( m_source.scaled( size(), Qt::KeepAspectRatio, Qt::SmoothTransformation ) );
+	}
+};
+
+class DyslightBakeDialog : public QDialog
+{
+	DyslightOptions m_options;
+	std::string m_command;
+	bool m_baked = false;
+
+	QComboBox* m_mode = nullptr;
+	QSpinBox* m_atlas = nullptr;
+	QSpinBox* m_blur = nullptr;
+	QSpinBox* m_border = nullptr;
+	QDoubleSpinBox* m_texels = nullptr;
+	QCheckBox* m_overrideAmbient = nullptr;
+	QSpinBox* m_ambientR = nullptr;
+	QSpinBox* m_ambientG = nullptr;
+	QSpinBox* m_ambientB = nullptr;
+	QCheckBox* m_shadows = nullptr;
+	DyslightPreviewLabel* m_preview = nullptr;
+	QComboBox* m_page = nullptr;
+	QPlainTextEdit* m_log = nullptr;
+	QStringList m_previewFiles;
+
+public:
+	DyslightBakeDialog( const DyslightOptions& options, QWidget* parent ) : QDialog( parent ), m_options( options ){
+		buildUi();
+	}
+
+	std::string command() const {
+		return m_command;
+	}
+
+	bool baked() const {
+		return m_baked;
+	}
+
+private:
+	void buildUi(){
+		setWindowTitle( "Dyslight Bake" );
+
+		auto* root = new QVBoxLayout( this );
+
+		auto* mapLabel = new QLabel( QString( "Map: " ) + QString::fromStdString( m_options.mapPath ), this );
+		mapLabel->setTextInteractionFlags( Qt::TextSelectableByMouse );
+		root->addWidget( mapLabel );
+
+		auto* form = new QFormLayout;
+
+		m_mode = new QComboBox( this );
+		m_mode->addItem( "CBRE-EX", 1 );
+		m_mode->addItem( "3DWS", 2 );
+		m_mode->setCurrentIndex( m_options.mode == 2 ? 1 : 0 );
+		form->addRow( "Mode", m_mode );
+
+		QSettings settings;
+		const int mode = m_mode->currentData().toInt();
+		const QString prefix = QString( "Dyslight/%1/" ).arg( mode );
+
+		m_atlas = new QSpinBox( this );
+		m_atlas->setRange( 64, 8192 );
+		m_atlas->setSingleStep( 64 );
+		m_atlas->setValue( m_options.hasAtlas ? m_options.atlas : settings.value( prefix + "atlas", dyslightDefaultAtlas( mode ) ).toInt() );
+		form->addRow( "Sheet size (px)", m_atlas );
+
+		m_blur = new QSpinBox( this );
+		m_blur->setRange( 0, 8 );
+		m_blur->setValue( m_options.hasBlur ? m_options.blur : settings.value( prefix + "blur", dyslightDefaultBlur( mode ) ).toInt() );
+		form->addRow( "Blur radius", m_blur );
+
+		m_border = new QSpinBox( this );
+		m_border->setRange( 0, 32 );
+		m_border->setValue( m_options.hasBorder ? m_options.border : settings.value( prefix + "border", dyslightDefaultBorder( mode ) ).toInt() );
+		form->addRow( "Border (texels)", m_border );
+
+		m_texels = new QDoubleSpinBox( this );
+		m_texels->setRange( 0.0, 256.0 );
+		m_texels->setDecimals( 2 );
+		m_texels->setSpecialValueText( "per face lightmapscale" );
+		m_texels->setValue( m_options.hasTexels ? m_options.texels : settings.value( prefix + "texels", 0.0 ).toDouble() );
+		form->addRow( "Units per texel", m_texels );
+
+		auto* ambientRow = new QHBoxLayout;
+		m_overrideAmbient = new QCheckBox( "Override worldspawn", this );
+		m_overrideAmbient->setChecked( m_options.overrideAmbient || settings.value( prefix + "ambientOverride", false ).toBool() );
+		m_ambientR = new QSpinBox( this );
+		m_ambientR->setRange( 0, 255 );
+		m_ambientR->setValue( m_options.overrideAmbient ? m_options.ambientR : settings.value( prefix + "ambientR", 64 ).toInt() );
+		m_ambientG = new QSpinBox( this );
+		m_ambientG->setRange( 0, 255 );
+		m_ambientG->setValue( m_options.overrideAmbient ? m_options.ambientG : settings.value( prefix + "ambientG", 64 ).toInt() );
+		m_ambientB = new QSpinBox( this );
+		m_ambientB->setRange( 0, 255 );
+		m_ambientB->setValue( m_options.overrideAmbient ? m_options.ambientB : settings.value( prefix + "ambientB", 64 ).toInt() );
+		ambientRow->addWidget( m_overrideAmbient );
+		ambientRow->addWidget( new QLabel( "R", this ) );
+		ambientRow->addWidget( m_ambientR );
+		ambientRow->addWidget( new QLabel( "G", this ) );
+		ambientRow->addWidget( m_ambientG );
+		ambientRow->addWidget( new QLabel( "B", this ) );
+		ambientRow->addWidget( m_ambientB );
+		auto* ambientWidget = new QWidget( this );
+		ambientWidget->setLayout( ambientRow );
+		form->addRow( "Ambient", ambientWidget );
+
+		m_shadows = new QCheckBox( "Cast shadows", this );
+		m_shadows->setChecked( m_options.hasShadowFlag ? m_options.shadows : settings.value( prefix + "shadows", true ).toBool() );
+		form->addRow( QString(), m_shadows );
+
+		root->addLayout( form );
+
+		auto* previewGroup = new QGroupBox( "Preview", this );
+		auto* previewLayout = new QVBoxLayout( previewGroup );
+
+		auto* pageRow = new QHBoxLayout;
+		pageRow->addWidget( new QLabel( "Page:", this ) );
+		m_page = new QComboBox( this );
+		pageRow->addWidget( m_page );
+		pageRow->addStretch( 1 );
+		previewLayout->addLayout( pageRow );
+
+		m_preview = new DyslightPreviewLabel( this );
+		m_preview->setText( "Bake a preview to see the lightmap." );
+		previewLayout->addWidget( m_preview, 0, Qt::AlignCenter );
+
+		auto* previewButtons = new QHBoxLayout;
+		auto* previewButton = new QPushButton( "Preview", this );
+		auto* clearPreviewButton = new QPushButton( "Clear preview", this );
+		previewButtons->addWidget( previewButton );
+		previewButtons->addWidget( clearPreviewButton );
+		previewButtons->addStretch( 1 );
+		previewLayout->addLayout( previewButtons );
+
+		m_log = new QPlainTextEdit( this );
+		m_log->setReadOnly( true );
+		m_log->setMaximumHeight( 100 );
+		m_log->setPlaceholderText( "Build output" );
+		previewLayout->addWidget( m_log );
+
+		root->addWidget( previewGroup, 1 );
+
+		auto* buttons = new QDialogButtonBox( QDialogButtonBox::Ok | QDialogButtonBox::Close, this );
+		buttons->button( QDialogButtonBox::Ok )->setText( "Bake" );
+		root->addWidget( buttons );
+
+		QObject::connect( buttons->button( QDialogButtonBox::Ok ), &QPushButton::clicked, this, [this](){ runBake(); } );
+		QObject::connect( buttons, &QDialogButtonBox::rejected, this, [this](){ reject(); } );
+		QObject::connect( previewButton, &QPushButton::clicked, this, [this](){ runBake(); } );
+		QObject::connect( clearPreviewButton, &QPushButton::clicked, this, [this](){ CamWnd_ClearLightmapPreview(); } );
+		QObject::connect( m_page, QOverload<int>::of( &QComboBox::currentIndexChanged ), this, [this]( int index ){ showPage( index ); } );
+		QObject::connect( m_overrideAmbient, &QCheckBox::toggled, this, [this]( bool ){ updateAmbientEnabled(); } );
+		QObject::connect( m_mode, QOverload<int>::of( &QComboBox::currentIndexChanged ), this, [this]( int ){
+			const int mode = m_mode->currentData().toInt();
+			m_atlas->setValue( dyslightDefaultAtlas( mode ) );
+			m_blur->setValue( dyslightDefaultBlur( mode ) );
+			m_border->setValue( dyslightDefaultBorder( mode ) );
+		} );
+
+		updateAmbientEnabled();
+		loadPreview();
+	}
+
+	void updateAmbientEnabled(){
+		const bool enabled = m_overrideAmbient->isChecked();
+		m_ambientR->setEnabled( enabled );
+		m_ambientG->setEnabled( enabled );
+		m_ambientB->setEnabled( enabled );
+	}
+
+	void saveSettings(){
+		QSettings settings;
+		const QString prefix = QString( "Dyslight/%1/" ).arg( m_mode->currentData().toInt() );
+		settings.setValue( prefix + "atlas", m_atlas->value() );
+		settings.setValue( prefix + "blur", m_blur->value() );
+		settings.setValue( prefix + "border", m_border->value() );
+		settings.setValue( prefix + "texels", m_texels->value() );
+		settings.setValue( prefix + "ambientOverride", m_overrideAmbient->isChecked() );
+		settings.setValue( prefix + "ambientR", m_ambientR->value() );
+		settings.setValue( prefix + "ambientG", m_ambientG->value() );
+		settings.setValue( prefix + "ambientB", m_ambientB->value() );
+		settings.setValue( prefix + "shadows", m_shadows->isChecked() );
+	}
+
+	std::string buildCommandLine() const {
+		const int mode = m_mode->currentData().toInt();
+		std::string command = "\"" + m_options.executable + "\" " + std::to_string( mode ) + " \"" + m_options.mapPath + "\"";
+		command += " --atlas " + std::to_string( m_atlas->value() );
+		command += " --blur " + std::to_string( m_blur->value() );
+		command += " --border " + std::to_string( m_border->value() );
+		if ( m_texels->value() > 0.0 )
+			command += " --texels " + QString::number( m_texels->value(), 'f', 2 ).toStdString();
+		if ( m_overrideAmbient->isChecked() ) {
+			command += " --ambient " + std::to_string( m_ambientR->value() ) + " " + std::to_string( m_ambientG->value() ) + " " + std::to_string( m_ambientB->value() );
+		}
+		if ( !m_shadows->isChecked() )
+			command += " --noshadows";
+		for ( const std::string& extra : m_options.passthrough )
+			command += " " + extra;
+		return command;
+	}
+
+	void reject() override {
+		saveSettings();
+		QDialog::reject();
+	}
+
+	void loadPreview(){
+		const QFileInfo mapInfo( QString::fromStdString( m_options.mapPath ) );
+		const QDir dir( mapInfo.absolutePath() );
+		const QString base = mapInfo.completeBaseName();
+		const QString prefix = base + "_lm";
+		const QStringList names = dir.entryList( QDir::Files, QDir::Name );
+
+		QString single;
+		QMap<int, QString> pages;
+		for ( const QString& name : names ) {
+			if ( !name.endsWith( ".png" ) )
+				continue;
+			const QString stem = name.left( name.size() - 4 );
+			if ( stem == prefix ) {
+				single = dir.filePath( name );
+			}
+			else if ( stem.startsWith( prefix + "_" ) ) {
+				bool ok = false;
+				const int page = stem.mid( prefix.size() + 1 ).toInt( &ok );
+				if ( ok )
+					pages.insert( page, dir.filePath( name ) );
+			}
+		}
+
+		m_previewFiles.clear();
+		QStringList labels;
+		if ( !pages.isEmpty() ) {
+			for ( auto it = pages.cbegin(); it != pages.cend(); ++it ) {
+				m_previewFiles << it.value();
+				labels << QString::number( it.key() );
+			}
+		}
+		else if ( !single.isEmpty() ) {
+			m_previewFiles << single;
+			labels << "0";
+		}
+
+		m_page->blockSignals( true );
+		m_page->clear();
+		m_page->addItems( labels );
+		m_page->blockSignals( false );
+		m_page->setVisible( m_previewFiles.size() > 1 );
+
+		if ( m_previewFiles.isEmpty() ) {
+			m_preview->setSourcePixmap( QPixmap() );
+			m_preview->setText( "No lightmap found, click Preview." );
+			return;
+		}
+		showPage( 0 );
+	}
+
+	void showPage( int index ){
+		if ( index < 0 || index >= m_previewFiles.size() )
+			return;
+		QPixmap pixmap( m_previewFiles[index] );
+		if ( pixmap.isNull() ) {
+			m_preview->setSourcePixmap( QPixmap() );
+			m_preview->setText( "Could not load " + m_previewFiles[index] );
+			return;
+		}
+		m_preview->setSourcePixmap( pixmap );
+	}
+
+	void runBake(){
+		m_command = buildCommandLine();
+		const std::string command = m_command;
+		const auto tokens = splitCommandLine( command );
+		if ( tokens.empty() )
+			return;
+
+		QString program = QString::fromStdString( tokens[0] );
+		QStringList arguments;
+		for ( size_t i = 1; i < tokens.size(); ++i )
+			arguments << QString::fromStdString( tokens[i] );
+
+		m_log->clear();
+		m_log->appendPlainText( "> " + QString::fromStdString( command ) );
+
+		QProcess process;
+		process.setProcessChannelMode( QProcess::MergedChannels );
+		process.setWorkingDirectory( QFileInfo( QString::fromStdString( m_options.mapPath ) ).absolutePath() );
+
+		QProgressDialog progress( "Baking preview...", "Cancel", 0, 0, this );
+		progress.setWindowTitle( "Dyslight Preview" );
+		progress.setWindowModality( Qt::WindowModal );
+		progress.setMinimumDuration( 0 );
+		progress.setAutoClose( false );
+
+		process.start( program, arguments );
+		if ( !process.waitForStarted( 5000 ) ) {
+			m_log->appendPlainText( "Failed to start dyslight." );
+			return;
+		}
+
+		progress.show();
+		while ( process.state() != QProcess::NotRunning ) {
+			if ( progress.wasCanceled() ) {
+				process.kill();
+				break;
+			}
+			process.waitForFinished( 50 );
+			const QString text = QString::fromLocal8Bit( process.readAll() );
+			if ( !text.isEmpty() )
+				m_log->appendPlainText( text.trimmed() );
+			QApplication::processEvents();
+		}
+		{
+			const QString text = QString::fromLocal8Bit( process.readAll() );
+			if ( !text.isEmpty() )
+				m_log->appendPlainText( text.trimmed() );
+		}
+		progress.close();
+		if ( process.state() != QProcess::NotRunning ) {
+			process.kill();
+			process.waitForFinished( 2000 );
+		}
+
+		if ( process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0 ) {
+			loadPreview();
+			CamWnd_SetLightmapPreview( m_options.mapPath.c_str() );
+			m_baked = true;
+			saveSettings();
+		}
+		else {
+			m_preview->setSourcePixmap( QPixmap() );
+			m_preview->setText( "Bake failed, see log." );
+		}
+	}
+};
+
+}
+
+static bool DyslightBake_editCommand( CopiedString& command ){
+	DyslightOptions options;
+	if ( !parseDyslightCommand( command.c_str(), options ) )
+		return true;
+
+	DyslightBakeDialog dialog( options, MainFrame_getWindow() );
+	dialog.exec();
+
+	if ( dialog.baked() )
+		g_last_dyslight_command = dialog.command().c_str();
+	return false;
+}
 
 void Build_refreshMenu( QMenu* menu );
 
@@ -1170,7 +1710,7 @@ void LoadBuildMenu();
 void DoBuildMenu(){
 	ProjectList projectList( g_build_project );
 	Project bakProj = g_build_project;
-	const size_t bakLastIdx = Project_find( g_build_project, g_lastExecutedBuild );
+	const size_t bakLastIdx = g_lastExecutedBuild;
 	Tools bakTools( g_build_tools );
 
 	const EMessageBoxReturn ret = BuildMenuDialog_construct( projectList );
@@ -1178,7 +1718,7 @@ void DoBuildMenu(){
 	if ( ret == eIDCANCEL || ret == 0 ) {
 		if ( projectList.m_changed || g_build_changed || g_tools_changed ){
 			g_build_project.swap( bakProj );
-			g_lastExecutedBuild = std::next( g_build_project.cbegin(), bakLastIdx );
+			g_lastExecutedBuild = bakLastIdx;
 			g_build_tools.swap( bakTools );
 			Build_refreshMenu( g_bsp_menu );
 		}
@@ -1210,6 +1750,7 @@ public:
 	BuildMenuItem( size_t buildIdx ) : m_buildIdx( buildIdx ){
 	}
 	void run() const {
+		g_edit_dyslight_on_build = true;
 		RunBSP( m_buildIdx );
 	}
 	typedef ConstMemberCaller<BuildMenuItem, void(), &BuildMenuItem::run> RunCaller;
@@ -1309,6 +1850,10 @@ void BuildMenu_Destroy(){
 
 
 void Build_runRecentExecutedBuild(){
-	if( !g_build_project.empty() )
-		RunBSP( Project_find( g_build_project, g_lastExecutedBuild ) );
+	if( !g_build_project.empty() ) {
+		const bool previous = g_edit_dyslight_on_build;
+		g_edit_dyslight_on_build = false;
+		RunBSP( g_lastExecutedBuild );
+		g_edit_dyslight_on_build = previous;
+	}
 }

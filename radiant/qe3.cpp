@@ -375,6 +375,8 @@ void RunBSP( size_t buildIdx ){
 	Pointfile_Delete();
 
 	std::vector<CopiedString> commands = build_construct_commands( buildIdx );
+	if ( commands.empty() )
+		return; // build was cancelled
 	const auto bspname = StringStream<64>( PathFilename( Map_Name( g_map ) ) ); // grab the file name for engine running
 	BuildMonitor_Run( commands, bspname );
 }

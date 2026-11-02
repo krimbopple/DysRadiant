@@ -34,6 +34,11 @@ void AddCameraMovedCallback( const SignalHandler& handler );
 
 void CamWnd_Update( CamWnd& camwnd );
 
+// draw a baked lightmap directly in the 3D view
+// TODO: look into this for dystopia
+void CamWnd_SetLightmapPreview( const char* mapPath );
+void CamWnd_ClearLightmapPreview();
+
 QWidget* CamWnd_getWidget( CamWnd& camwnd );
 void CamWnd_setParent( CamWnd& camwnd, QWidget* parent );
 void CamWnd_Shown_Construct( QWidget* parent );

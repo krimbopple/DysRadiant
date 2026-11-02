@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <project version="2.0">
   <var name="dyslight">"[RadiantPath]dyslight.[ExecutableType]"</var>
-  <build name="Bake + RMesh (CBRE-EX)">
+  <build name="Bake (CBRE-EX)">
     <command>[dyslight] 1 "[MapFile]"</command>
   </build>
-  <build name="Bake + RMesh (3DWS)">
+  <build name="Bake (3DWS)">
     <command>[dyslight] 2 "[MapFile]"</command>
   </build>
 </project>

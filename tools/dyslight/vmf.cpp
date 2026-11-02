@@ -1,5 +1,6 @@
 #include "vmf.h"
 
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -127,7 +128,7 @@ struct VParser
 			VToken name = next();
 			if ( name.text.empty() )
 				break;
-			if ( name.quoted || name.text == "{" || name.text == "}" )
+			if ( name.text == "{" || name.text == "}" )
 				continue;
 			auto node = parseNode( name.text );
 			if ( node )
@@ -181,14 +182,132 @@ static bool parseAxis( const std::string& s, Vec3& axis, float& shift, float& sc
 	return false;
 }
 
-// use the side vertex list when present, plane is the fallback
+struct DPlane
+{
+	double nx = 0.0;
+	double ny = 0.0;
+	double nz = 0.0;
+	double d = 0.0;
+
+	double distance( double x, double y, double z ) const {
+		return nx * x + ny * y + nz * z - d;
+	}
+};
+
+static bool planeFromPoints( const Vec3& a, const Vec3& b, const Vec3& c, DPlane& out ) {
+	double ux = (double)c.x - a.x, uy = (double)c.y - a.y, uz = (double)c.z - a.z;
+	double vx = (double)b.x - a.x, vy = (double)b.y - a.y, vz = (double)b.z - a.z;
+	double nx = uy * vz - uz * vy;
+	double ny = uz * vx - ux * vz;
+	double nz = ux * vy - uy * vx;
+	double len = std::sqrt( nx * nx + ny * ny + nz * nz );
+	if ( len < 1e-9 )
+		return false;
+	nx /= len;
+	ny /= len;
+	nz /= len;
+	out = { nx, ny, nz, nx * a.x + ny * a.y + nz * a.z };
+	return true;
+}
+
+// keep the part of the polygon behind the plane (distance <= 0)
+static void clipPolygon( std::vector<std::array<double, 3>>& poly, const DPlane& plane ) {
+	const double eps = 1e-3;
+	std::vector<std::array<double, 3>> out;
+	out.reserve( poly.size() + 1 );
+	for ( size_t i = 0; i < poly.size(); ++i ) {
+		const std::array<double, 3>& cur = poly[ i ];
+		const std::array<double, 3>& nxt = poly[ ( i + 1 ) % poly.size() ];
+		double dc = plane.distance( cur[ 0 ], cur[ 1 ], cur[ 2 ] );
+		double dn = plane.distance( nxt[ 0 ], nxt[ 1 ], nxt[ 2 ] );
+		bool curInside = dc <= eps;
+		bool nxtInside = dn <= eps;
+		if ( curInside )
+			out.push_back( cur );
+		if ( curInside != nxtInside ) {
+			double t = dc / ( dc - dn );
+			out.push_back( { cur[ 0 ] + ( nxt[ 0 ] - cur[ 0 ] ) * t,
+			                 cur[ 1 ] + ( nxt[ 1 ] - cur[ 1 ] ) * t,
+			                 cur[ 2 ] + ( nxt[ 2 ] - cur[ 2 ] ) * t } );
+		}
+	}
+	poly.swap( out );
+}
+
+// a large quad on the plane then clip it against every other brush plane
+static std::vector<Vec3> facePolygon( const DPlane& plane, const std::vector<DPlane>& planes, size_t self ) {
+	const double size = 1.0e6;
+	Vec3 n{ (float)plane.nx, (float)plane.ny, (float)plane.nz };
+	// pick axis least aligned with the normal
+	Vec3 axis{ 0, 0, 1 };
+	if ( std::abs( n.x ) <= std::abs( n.y ) && std::abs( n.x ) <= std::abs( n.z ) )
+		axis = Vec3{ 1, 0, 0 };
+	else if ( std::abs( n.y ) <= std::abs( n.z ) )
+		axis = Vec3{ 0, 1, 0 };
+
+	Vec3 u = n.cross( axis ).normalized();
+	Vec3 v = n.cross( u ).normalized();
+	Vec3 center = n * (float)plane.d;
+
+	std::vector<std::array<double, 3>> poly = {
+		{ center.x + u.x * size + v.x * size, center.y + u.y * size + v.y * size, center.z + u.z * size + v.z * size },
+		{ center.x - u.x * size + v.x * size, center.y - u.y * size + v.y * size, center.z - u.z * size + v.z * size },
+		{ center.x - u.x * size - v.x * size, center.y - u.y * size - v.y * size, center.z - u.z * size - v.z * size },
+		{ center.x + u.x * size - v.x * size, center.y + u.y * size - v.y * size, center.z + u.z * size - v.z * size },
+	};
+	for ( size_t i = 0; i < planes.size(); ++i ) {
+		if ( i == self )
+			continue;
+		clipPolygon( poly, planes[ i ] );
+		if ( poly.empty() )
+			return {};
+	}
+
+	std::vector<Vec3> out;
+	for ( const std::array<double, 3>& p : poly ) {
+		Vec3 point{ (float)p[ 0 ], (float)p[ 1 ], (float)p[ 2 ] };
+		if ( !out.empty() && ( point - out.back() ).length() < 1e-3f )
+			continue;
+		out.push_back( point );
+	}
+	if ( out.size() >= 2 && ( out.front() - out.back() ).length() < 1e-3f )
+		out.pop_back();
+	return out;
+}
+
+static void rebuildSolidPolygons( std::vector<Face>& faces, const std::vector<std::optional<DPlane>>& planes ) {
+	bool needsRebuild = false;
+	for ( const Face& face : faces )
+		if ( face.vertices.size() < 3 )
+			needsRebuild = true;
+	if ( !needsRebuild || planes.size() < 4 )
+		return;
+	for ( const std::optional<DPlane>& plane : planes )
+		if ( !plane )
+			return;
+
+	std::vector<DPlane> valid;
+	valid.reserve( planes.size() );
+	for ( const std::optional<DPlane>& plane : planes )
+		valid.push_back( *plane );
+
+	for ( size_t i = 0; i < faces.size(); ++i ) {
+		if ( faces[ i ].vertices.size() >= 3 )
+			continue;
+		std::vector<Vec3> polygon = facePolygon( valid[ i ], valid, i );
+		if ( polygon.size() >= 3 )
+			faces[ i ].vertices = std::move( polygon );
+	}
+}
+
 static void parseSolidNode( const VNode& node, Map& map, int& nextSolid, int& nextFace ) {
 	Solid solid;
 	solid.id = nextSolid++;
 	if ( const std::string* id = node.get( "id" ) )
 		solid.id = std::atoi( id->c_str() );
-	if ( const std::string* ed = node.get( "editor" ) )
-		(void)ed;
+
+	std::vector<Face> faces;
+	std::vector<std::optional<DPlane>> planes;
 	for ( const VNode& side : node.children ) {
 		if ( side.name != "side" )
 			continue;
@@ -209,11 +328,15 @@ static void parseSolidNode( const VNode& node, Map& map, int& nextSolid, int& ne
 		if ( const std::string* sg = side.get( "smoothing_groups" ) )
 			face.smoothing = std::atoi( sg->c_str() );
 
-		if ( const std::string* plane = side.get( "plane" ) ) {
+		std::optional<DPlane> plane;
+		if ( const std::string* planeProp = side.get( "plane" ) ) {
 			std::vector<Vec3> pts;
-			if ( parsePlane( *plane, pts ) ) {
+			if ( parsePlane( *planeProp, pts ) ) {
 				face.normal = ( pts[ 1 ] - pts[ 0 ] ).cross( pts[ 2 ] - pts[ 0 ] ).normalized();
 				face.dist = face.normal.dot( pts[ 0 ] );
+				DPlane p;
+				if ( planeFromPoints( pts[ 0 ], pts[ 1 ], pts[ 2 ], p ) )
+					plane = p;
 			}
 		}
 		for ( const VNode& child : side.children ) {
@@ -230,20 +353,20 @@ static void parseSolidNode( const VNode& node, Map& map, int& nextSolid, int& ne
 				}
 			}
 		}
-		if ( face.vertices.size() < 3 ) {
-			if ( const std::string* plane = side.get( "plane" ) ) {
-				std::vector<Vec3> pts;
-				if ( parsePlane( *plane, pts ) ) {
-					face.vertices = pts;
-					if ( face.normal.length() < 0.001f ) {
-						face.normal = ( pts[ 1 ] - pts[ 0 ] ).cross( pts[ 2 ] - pts[ 0 ] ).normalized();
-						face.dist = face.normal.dot( pts[ 0 ] );
-					}
-				}
-			}
+		faces.push_back( std::move( face ) );
+		planes.push_back( plane );
+	}
+
+	rebuildSolidPolygons( faces, planes );
+
+	for ( Face& face : faces ) {
+		if ( face.vertices.size() < 3 )
+			continue;
+		if ( face.normal.length() < 0.001f ) {
+			face.normal = ( face.vertices[ 1 ] - face.vertices[ 0 ] ).cross( face.vertices[ 2 ] - face.vertices[ 0 ] ).normalized();
+			face.dist = face.normal.dot( face.vertices[ 0 ] );
 		}
-		if ( face.vertices.size() >= 3 )
-			solid.faces.push_back( face );
+		solid.faces.push_back( std::move( face ) );
 	}
 	if ( !solid.faces.empty() ) {
 		orientSolidFaces( solid );
@@ -273,6 +396,8 @@ bool parseVmf( const fs::path& path, Map& map, std::string& error ) {
 	for ( const VNode& node : root ) {
 		if ( node.name == "visgroups" || node.name == "visgroup" ) {
 		} else if ( node.name == "world" ) {
+			for ( const auto& p : node.props )
+				map.worldKeys[ p.first ] = p.second;
 			for ( const VNode& child : node.children ) {
 				if ( child.name == "solid" )
 					parseSolidNode( child, map, nextSolid, nextFace );

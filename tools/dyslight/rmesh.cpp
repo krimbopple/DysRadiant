@@ -236,18 +236,15 @@ bool writeRmesh( const fs::path& base, const Map& map, const BakeResult& baked, 
 			writeU32( os, vertCount );
 
 			for ( const auto& [ face, lf ] : batch.faces ) {
-				const Vec3 ref = face->vertices[ 0 ];
 				const float us = std::max( 0.0001f, std::abs( face->uScale ) );
 				const float vs = std::max( 0.0001f, std::abs( face->vScale ) );
 				for ( const Vec3& v : face->vertices ) {
 					const float diffU = v.dot( face->uaxis ) / ( (float)tw * us ) + face->uShift * invW;
 					const float diffV = v.dot( face->vaxis ) / ( (float)th * vs ) + face->vShift * invH;
-					const float localU = ( v - ref ).dot( face->uaxis );
-					const float localV = ( v - ref ).dot( face->vaxis );
-					const float lmU = ( (float)lf->x + ( localU - lf->minU ) / std::max( 0.0001f, lf->stepU ) ) /
-					                  (float)std::max( 1, baked.atlasSize );
-					const float lmV = ( (float)lf->y + ( localV - lf->minV ) / std::max( 0.0001f, lf->stepV ) ) /
-					                  (float)std::max( 1, baked.atlasSize );
+					const float localU = ( v - lf->ref ).dot( lf->uaxis );
+					const float localV = ( v - lf->ref ).dot( lf->vaxis );
+					const float lmU = ( (float)lf->x + (float)lf->border + 0.5f + ( localU - lf->minU ) / std::max( 0.0001f, lf->stepU ) ) / (float)std::max( 1, baked.atlasSize );
+					const float lmV = ( (float)lf->y + (float)lf->border + 0.5f + ( localV - lf->minV ) / std::max( 0.0001f, lf->stepV ) ) / (float)std::max( 1, baked.atlasSize );
 					writeRmVertex( os, v, diffU, diffV, lmU, lmV );
 				}
 			}

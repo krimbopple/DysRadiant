@@ -62,6 +62,13 @@
 #include <QOpenGLWidget>
 
 #include <QApplication>
+#include <QImage>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QTextStream>
+#include <vector>
+#include <cstdint>
 
 // https://stackoverflow.com/questions/42566421/how-to-queue-lambda-function-into-qts-event-loop/42566867#42566867
 template <typename Fun> void postCall( QObject * obj, Fun && fun ) {
@@ -1923,6 +1930,214 @@ void ShowSize3dToggle(){
 	}
 }
 
+namespace
+{
+struct LmPreviewVertex
+{
+	float x, y, z;
+	float u, v;
+	int page;
+};
+
+struct LmPreviewPage
+{
+	QString file;
+	QImage image;
+	GLuint texture = 0;
+};
+
+std::vector<LmPreviewVertex> g_lmPreviewVertices;
+std::vector<uint32_t> g_lmPreviewIndices;
+std::vector<LmPreviewPage> g_lmPreviewPages;
+bool g_lmPreviewActive = false;
+bool g_lmPreviewTexturesDirty = false;
+
+void UploadLightmapPreviewTextures(){
+	if ( !g_lmPreviewTexturesDirty )
+		return;
+	for ( LmPreviewPage& page : g_lmPreviewPages ) {
+		if ( page.texture != 0 ) {
+			gl().glDeleteTextures( 1, &page.texture );
+			page.texture = 0;
+		}
+		if ( page.image.isNull() )
+			continue;
+		gl().glGenTextures( 1, &page.texture );
+		gl().glBindTexture( GL_TEXTURE_2D, page.texture );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, page.image.width(), page.image.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, page.image.constBits() );
+	}
+	g_lmPreviewTexturesDirty = false;
+}
+
+void DrawLightmapPreview(){
+	if ( !g_lmPreviewActive || g_lmPreviewIndices.empty() )
+		return;
+
+	UploadLightmapPreviewTextures();
+
+	gl().glUseProgram( 0 );
+	gl().glActiveTexture( GL_TEXTURE0 );
+	gl().glClientActiveTexture( GL_TEXTURE0 );
+	gl().glMatrixMode( GL_TEXTURE );
+	gl().glLoadIdentity();
+	gl().glMatrixMode( GL_MODELVIEW );
+
+	gl().glDisableClientState( GL_VERTEX_ARRAY );
+	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	gl().glDisableClientState( GL_NORMAL_ARRAY );
+	gl().glDisableClientState( GL_COLOR_ARRAY );
+
+	gl().glDisable( GL_LIGHTING );
+	gl().glDisable( GL_FOG );
+	gl().glDisable( GL_CULL_FACE );
+	gl().glEnable( GL_TEXTURE_2D );
+	gl().glEnable( GL_BLEND );
+	gl().glBlendFunc( GL_DST_COLOR, GL_ZERO );
+	gl().glEnable( GL_DEPTH_TEST );
+	gl().glDepthMask( GL_FALSE );
+	gl().glDepthFunc( GL_LEQUAL );
+	gl().glEnable( GL_POLYGON_OFFSET_FILL );
+	gl().glPolygonOffset( -1.0f, -1.0f );
+	gl().glColor4f( 1, 1, 1, 1 );
+
+	gl().glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE );
+	gl().glTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE );
+	gl().glTexEnvi( GL_TEXTURE_ENV, GL_SRC0_RGB, GL_TEXTURE );
+	gl().glTexEnvi( GL_TEXTURE_ENV, GL_SRC1_RGB, GL_PRIMARY_COLOR );
+	gl().glTexEnvf( GL_TEXTURE_ENV, GL_RGB_SCALE, 2.0f );
+
+	// scene render leaves a bunch of stuff behind we don't need for the lightmap
+	gl().glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+	gl().glDisable( GL_POLYGON_STIPPLE );
+	gl().glDisable( GL_LINE_STIPPLE );
+	gl().glDisable( GL_POLYGON_SMOOTH );
+	gl().glDisable( GL_LINE_SMOOTH );
+	gl().glDisable( GL_TEXTURE_GEN_S );
+	gl().glDisable( GL_TEXTURE_GEN_T );
+	gl().glDisable( GL_TEXTURE_GEN_R );
+	gl().glDisable( GL_TEXTURE_GEN_Q );
+
+	for ( size_t pageIndex = 0; pageIndex < g_lmPreviewPages.size(); ++pageIndex ) {
+		const LmPreviewPage& page = g_lmPreviewPages[ pageIndex ];
+		if ( page.texture == 0 )
+			continue;
+		gl().glBindTexture( GL_TEXTURE_2D, page.texture );
+		gl().glBegin( GL_TRIANGLES );
+		for ( size_t i = 0; i + 2 < g_lmPreviewIndices.size(); i += 3 ) {
+			const uint32_t ia = g_lmPreviewIndices[ i ];
+			const uint32_t ib = g_lmPreviewIndices[ i + 1 ];
+			const uint32_t ic = g_lmPreviewIndices[ i + 2 ];
+			if ( ia >= g_lmPreviewVertices.size() || ib >= g_lmPreviewVertices.size() || ic >= g_lmPreviewVertices.size() )
+				continue;
+			const LmPreviewVertex& a = g_lmPreviewVertices[ ia ];
+			if ( a.page != (int)pageIndex )
+				continue;
+			const LmPreviewVertex& b = g_lmPreviewVertices[ ib ];
+			const LmPreviewVertex& c = g_lmPreviewVertices[ ic ];
+			gl().glTexCoord2f( a.u, a.v ); gl().glVertex3f( a.x, a.y, a.z );
+			gl().glTexCoord2f( b.u, b.v ); gl().glVertex3f( b.x, b.y, b.z );
+			gl().glTexCoord2f( c.u, c.v ); gl().glVertex3f( c.x, c.y, c.z );
+		}
+		gl().glEnd();
+	}
+
+	gl().glDisable( GL_POLYGON_OFFSET_FILL );
+	gl().glPolygonOffset( 0.0f, 0.0f );
+	gl().glDepthFunc( GL_LESS );
+	gl().glDepthMask( GL_TRUE );
+	gl().glDisable( GL_BLEND );
+	gl().glDisable( GL_TEXTURE_2D );
+	gl().glEnable( GL_CULL_FACE );
+	gl().glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	gl().glTexEnvf( GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f );
+	gl().glColor4f( 1, 1, 1, 1 );
+}
+}
+
+void CamWnd_ClearLightmapPreview(){
+	g_lmPreviewActive = false;
+	g_lmPreviewVertices.clear();
+	g_lmPreviewIndices.clear();
+	g_lmPreviewPages.clear();
+	g_lmPreviewTexturesDirty = true;
+	if ( g_camwnd != 0 )
+		CamWnd_Update( *g_camwnd );
+}
+
+void CamWnd_SetLightmapPreview( const char* mapPath ){
+	g_lmPreviewActive = false;
+	g_lmPreviewVertices.clear();
+	g_lmPreviewIndices.clear();
+	g_lmPreviewPages.clear();
+	g_lmPreviewTexturesDirty = true;
+
+	const QFileInfo mapInfo( QString::fromLocal8Bit( mapPath ) );
+	const QDir dir( mapInfo.absolutePath() );
+	const QString base = mapInfo.completeBaseName();
+	QFile file( dir.filePath( base + "_lm_preview.txt" ) );
+	if ( !file.open( QIODevice::ReadOnly | QIODevice::Text ) ) {
+		if ( g_camwnd != 0 )
+			CamWnd_Update( *g_camwnd );
+		return;
+	}
+
+	QTextStream stream( &file );
+	QString magic;
+	int version = 0;
+	stream >> magic >> version;
+	if ( magic != "DYSLIGHT_PREVIEW" || version != 1 ) {
+		if ( g_camwnd != 0 )
+			CamWnd_Update( *g_camwnd );
+		return;
+	}
+
+	QString token;
+	while ( !stream.atEnd() ) {
+		stream >> token;
+		if ( token == "atlas" ) {
+			int atlas = 0;
+			stream >> atlas;
+		}
+		else if ( token == "page" ) {
+			int index = 0;
+			QString name;
+			stream >> index >> name;
+			if ( index >= (int)g_lmPreviewPages.size() )
+				g_lmPreviewPages.resize( index + 1 );
+			g_lmPreviewPages[ index ].file = name;
+			g_lmPreviewPages[ index ].image = QImage( dir.filePath( name ) );
+		}
+		else if ( token == "v" ) {
+			LmPreviewVertex vertex{};
+			stream >> vertex.x >> vertex.y >> vertex.z >> vertex.u >> vertex.v >> vertex.page;
+			g_lmPreviewVertices.push_back( vertex );
+		}
+		else if ( token == "i" ) {
+			uint32_t a = 0, b = 0, c = 0;
+			stream >> a >> b >> c;
+			g_lmPreviewIndices.push_back( a );
+			g_lmPreviewIndices.push_back( b );
+			g_lmPreviewIndices.push_back( c );
+		}
+	}
+	file.close();
+
+	for ( LmPreviewPage& page : g_lmPreviewPages ) {
+		if ( page.image.isNull() && !page.file.isEmpty() )
+			page.image = QImage( dir.filePath( QFileInfo( page.file ).fileName() ) );
+		if ( !page.image.isNull() )
+			page.image = page.image.convertToFormat( QImage::Format_RGBA8888 );
+	}
+
+	g_lmPreviewActive = !g_lmPreviewVertices.empty() && !g_lmPreviewIndices.empty();
+	if ( g_camwnd != 0 )
+		CamWnd_Update( *g_camwnd );
+}
+
 void CamWnd::Cam_Draw(){
 //		globalOutputStream() << "Cam_Draw()\n";
 
@@ -2031,10 +2246,10 @@ void CamWnd::Cam_Draw(){
 
 	{
 		CamRenderer renderer( globalstate,
-		                      g_camwindow_globals_private.m_bFaceWire ? m_state_facewire : 0,
-		                      m_Camera.draw_mode == cd_texture_plus_wire ? m_state_wire : 0,
+		                      ( !g_lmPreviewActive && g_camwindow_globals_private.m_bFaceWire ) ? m_state_facewire : 0,
+		                      ( !g_lmPreviewActive && m_Camera.draw_mode == cd_texture_plus_wire ) ? m_state_wire : 0,
 		                      m_state_select0,
-		                      g_camwindow_globals_private.m_bFaceFill ? m_state_select1 : 0,
+		                      ( !g_lmPreviewActive && g_camwindow_globals_private.m_bFaceFill ) ? m_state_select1 : 0,
 		                      m_view.getViewer() );
 
 		Scene_Render( renderer, m_view );
@@ -2048,6 +2263,14 @@ void CamWnd::Cam_Draw(){
 		}
 
 		renderer.render( m_Camera.modelview, m_Camera.projection );
+	}
+
+	if ( g_lmPreviewActive ) {
+		gl().glMatrixMode( GL_PROJECTION );
+		gl().glLoadMatrixf( reinterpret_cast<const float*>( &m_Camera.projection ) );
+		gl().glMatrixMode( GL_MODELVIEW );
+		gl().glLoadMatrixf( reinterpret_cast<const float*>( &m_Camera.modelview ) );
+		DrawLightmapPreview();
 	}
 
 	// prepare for 2d stuff
